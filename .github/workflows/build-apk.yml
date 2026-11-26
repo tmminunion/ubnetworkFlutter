@@ -78,13 +78,6 @@ jobs:
             --build-number="${{ steps.meta.outputs.version_code }}"
           cp build/app/outputs/flutter-apk/app-release.apk "UBnetwork-v${{ steps.meta.outputs.version_name }}-code${{ steps.meta.outputs.version_code }}-release.apk"
 
-      - name: Upload APK Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: UBnetwork-v${{ steps.meta.outputs.version_name }}-code${{ steps.meta.outputs.version_code }}-release
-          path: UBnetwork-v${{ steps.meta.outputs.version_name }}-code${{ steps.meta.outputs.version_code }}-release.apk
-          retention-days: 30
-
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
