@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../data/hub_catalog.dart';
 import '../checksheet/checksheet_screen.dart';
+import '../quality/quality_daily_screen.dart';
 import '../safety/kyt_monitoring_screen.dart';
 import '../safety/safety_temuan_screen.dart';
 import '../safety/safety_bira_screen.dart';
@@ -32,6 +33,20 @@ class SubHubScreen extends StatelessWidget {
     if (mod.route == '/kyt/monitoring') {
       Navigator.of(context).push(
         MaterialPageRoute<void>(builder: (_) => const KytMonitoringScreen()),
+      );
+      return;
+    }
+
+    if (mod.route == '/quality/daily/out') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const QualityDailyScreen(kind: 'out')),
+      );
+      return;
+    }
+
+    if (mod.route == '/quality/daily/in') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const QualityDailyScreen(kind: 'in')),
       );
       return;
     }
