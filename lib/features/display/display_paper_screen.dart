@@ -1112,8 +1112,7 @@ class _DisplayPaperScreenState extends State<DisplayPaperScreen> {
                       Padding(
                         padding: const EdgeInsets.all(5),
                         child: Text(
-                          '${r['kra'] ?? ''}${(r['output'] ?? '').toString().isNotEmpty ? '
-${r['output']}' : ''}'.trim(),
+                          '${r['kra'] ?? ''}${(r['output'] ?? '').toString().isNotEmpty ? '\n${r['output']}' : ''}'.trim(),
                           style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
                         ),
                       ),
@@ -1125,8 +1124,7 @@ ${r['output']}' : ''}'.trim(),
                           [
                             ...(r['improvement'] is List ? (r['improvement'] as List).map((e) => '• $e') : const <String>[]),
                             ...(r['activity'] is List ? (r['activity'] as List).map((e) => '↳ $e') : const <String>[]),
-                          ].join('
-'),
+                          ].join('\n'),
                           style: const TextStyle(fontSize: 9.5, color: Color(0xFF334155)),
                         ),
                       ),
@@ -1349,8 +1347,7 @@ ${r['output']}' : ''}'.trim(),
                 Padding(padding: const EdgeInsets.all(6), child: Text('${r['process'] ?? r['location'] ?? ''}', style: const TextStyle(fontSize: 10.5, color: Color(0xFF334155)))),
                 Padding(padding: const EdgeInsets.all(6), child: Text('${r['description'] ?? ''}', style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)))),
                 Padding(padding: const EdgeInsets.all(6), child: Text('${r['cmDescription'] ?? ''}', style: const TextStyle(fontSize: 10.5, color: Color(0xFF0F766E)))),
-                Padding(padding: const EdgeInsets.all(6), child: Text('${r['pic'] ?? ''}
-${r['date'] ?? ''}'.trim(), style: const TextStyle(fontSize: 10, color: Color(0xFF475569)))),
+                Padding(padding: const EdgeInsets.all(6), child: Text('${r['pic'] ?? ''}\n${r['date'] ?? ''}'.trim(), style: const TextStyle(fontSize: 10, color: Color(0xFF475569)))),
                 Padding(
                   padding: const EdgeInsets.all(6),
                   child: Text(
@@ -1458,8 +1455,7 @@ ${r['date'] ?? ''}'.trim(), style: const TextStyle(fontSize: 10, color: Color(0x
                 Padding(padding: const EdgeInsets.all(6), child: Text('${reports[i]['line'] ?? ''} · ${reports[i]['process'] ?? ''}', style: const TextStyle(fontSize: 10.5, color: Color(0xFF334155)))),
                 Padding(padding: const EdgeInsets.all(6), child: Text('${reports[i]['beforeValue'] ?? '-'} → ${reports[i]['afterValue'] ?? '-'}', style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF1D4ED8)))),
                 Padding(padding: const EdgeInsets.all(6), child: Text('${reports[i]['result'] ?? ''}', style: const TextStyle(fontSize: 10.5, color: Color(0xFF0F766E)))),
-                Padding(padding: const EdgeInsets.all(6), child: Text('${reports[i]['pic'] ?? ''}
-${reports[i]['month'] ?? ''}'.trim(), style: const TextStyle(fontSize: 10, color: Color(0xFF475569)))),
+                Padding(padding: const EdgeInsets.all(6), child: Text('${reports[i]['pic'] ?? ''}\n${reports[i]['month'] ?? ''}'.trim(), style: const TextStyle(fontSize: 10, color: Color(0xFF475569)))),
                 Padding(padding: const EdgeInsets.all(6), child: Text('${reports[i]['status'] ?? ''}'.toUpperCase(), style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Color(0xFF16A34A)))),
               ],
             ),
