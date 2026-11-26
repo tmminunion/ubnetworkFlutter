@@ -1,9 +1,11 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'local_store.dart';
+import 'ub_web_api.dart';
 
 class UbAuthUser {
   const UbAuthUser({
@@ -74,11 +76,22 @@ class AuthService {
   UbAuthUser? _currentUser;
   UbAuthUser? get currentUser => _currentUser;
 
+  /// Dipanggil otomatis bila server mengembalikan `401 Unauthorized` atau sesi `ub_gate` tidak valid.
+  VoidCallback? onUnauthorized;
+  bool _handlingUnauthorized = false;
+
   Future<UbAuthUser?> loadSavedUser() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_kAuthUser);
-    if (raw == null || raw.isEmpty) {
+    final rawCookie = prefs.getString(_kGateCookie);
+    final cleanCookie = UbWebApi.extractCookieHeader(rawCookie);
+
+    // Wajib memiliki cookie `ub_gate=` agar request ke `/api/ub` tidak ditolak 401 oleh Vercel proxy.ts
+    if (raw == null || raw.isEmpty || !cleanCookie.contains('ub_gate=')) {
       _currentUser = null;
+      if (raw != null) {
+        await prefs.remove(_kAuthUser);
+      }
       return null;
     }
     try {
@@ -90,6 +103,56 @@ class AuthService {
     } catch (_) {}
     _currentUser = null;
     return null;
+  }
+
+  /// Verifikasi ke `/api/gate` apakah cookie `ub_gate` masih aktif di server (non-blocking saat offline).
+  Future<bool> verifySessionOnline() async {
+    final prefs = await SharedPreferences.getInstance();
+    final cleanCookie = UbWebApi.extractCookieHeader(prefs.getString(_kGateCookie));
+    if (!cleanCookie.contains('ub_gate=')) {
+      await notifyUnauthorized();
+      return false;
+    }
+    try {
+      final res = await http
+          .get(
+            Uri.parse('$gateBaseUrl/api/gate'),
+            headers: {
+              'Accept': 'application/json',
+              'Cookie': cleanCookie,
+            },
+          )
+          .timeout(const Duration(seconds: 12));
+      if (res.statusCode == 401) {
+        await notifyUnauthorized();
+        return false;
+      }
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        final json = _decodeMap(res.body);
+        if (json['authenticated'] == false) {
+          await notifyUnauthorized();
+          return false;
+        }
+      }
+      return true;
+    } catch (_) {
+      // Offline / jaringan lambat: pertahankan sesi lokal agar fitur offline-first tetap jalan
+      return true;
+    }
+  }
+
+  Future<void> notifyUnauthorized() async {
+    if (_handlingUnauthorized) return;
+    _handlingUnauthorized = true;
+    try {
+      _currentUser = null;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_kAuthUser);
+      await prefs.remove(_kGateCookie);
+      onUnauthorized?.call();
+    } finally {
+      _handlingUnauthorized = false;
+    }
   }
 
   Future<void> _saveSession(UbAuthUser user, {String? cookieHeader}) async {

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
@@ -15,6 +16,8 @@ class OnlineChecksheetLoadResult {
     required this.templates,
     required this.message,
     this.prevCarry,
+    this.unauthorized = false,
+    this.unsyncedLocalDraft,
   });
 
   final bool online;
@@ -23,6 +26,8 @@ class OnlineChecksheetLoadResult {
   final List<ShiftTemplate> templates;
   final String message;
   final ({String finish, String label})? prevCarry;
+  final bool unauthorized;
+  final ChecksheetReport? unsyncedLocalDraft;
 }
 
 class LocalStore {
@@ -316,201 +321,156 @@ class LocalStore {
     );
   }
 
-  /// 1:1 Next.js Checksheet Loader:
-  /// 1. Mengambil data hari ini (`get_report`), master settings (`get_settings`),
-  ///    template aktif (`templates`), struktur regu (`get_members`), & body finish sebelumnya (`monthly_reports`) secara paralel.
-  /// 2. Jika laporan tanggal+shift sudah ada di server (`found == true`), langsung merestorasi seluruh jam kerja, problem, absensi, CBU & CKD.
-  /// 3. Jika belum ada di server (`found == false`), langsung menampilkan sesuai Template Harian (`pagi_normal` / `jumat_normal` / `malam_normal`)
-  ///    lengkap dengan Takt Time server, roster Hadir aktual, rasio CBU/CKD master, dan carry-over No Body.
+  /// Menyegarkan cache master (`get_settings`, `get_members`, `templates`) secara bertahap di background
+  /// tanpa membebani koneksi `get_report` utama.
+  Future<void> _refreshMasterCachesInBackground(String normShift, double taktTime) async {
+    try {
+      final cfg = await getSettings();
+      final batch1 = await Future.wait([
+        UbWebApi.instance.getUb({'action': 'get_settings'}),
+        UbWebApi.instance.getUb({'action': 'get_members', 'shift': normShift}),
+      ]);
+      final setRes = batch1[0];
+      final memRes = batch1[1];
+      var resolvedTakt = taktTime;
+      if (setRes.ok && setRes.map['status'] == 'success' && setRes.map['data'] is Map) {
+        final sd = Map<String, dynamic>.from(setRes.map['data'] as Map);
+        final sTakt = (sd['current_takt_time'] as num?)?.toDouble();
+        if (sTakt != null && sTakt > 0) {
+          resolvedTakt = sTakt;
+          if (cfg.taktTime != sTakt) {
+            cfg.taktTime = sTakt;
+            await saveSettings(cfg);
+          }
+        }
+      }
+      if (memRes.ok && memRes.map['status'] == 'success' && memRes.map['data'] is List) {
+        final parsedStruct = _extractStructFromRawMembers(normShift, memRes.map['data'] as List);
+        if (parsedStruct != null) {
+          await _saveCachedStructure(normShift, parsedStruct);
+        }
+      }
+
+      final tplRes = await UbWebApi.instance.getUb({
+        'action': 'templates',
+        'takt_time': '$resolvedTakt',
+      });
+      if (tplRes.ok && tplRes.map['status'] == 'success' && tplRes.map['data'] is List) {
+        final parsedTpls = (tplRes.map['data'] as List)
+            .whereType<Map>()
+            .map((e) => ShiftTemplate.fromJson(Map<String, dynamic>.from(e)))
+            .where((t) => t.slots.isNotEmpty)
+            .toList();
+        if (parsedTpls.isNotEmpty) {
+          await _saveCachedTemplates(parsedTpls);
+        }
+      }
+    } catch (_) {}
+  }
+
+  ({String gl, String tl, List<MemberAbsen> members})? _extractStructFromRawMembers(
+    String normShift,
+    List<dynamic> rawList,
+  ) {
+    final rawMems = rawList
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+    if (rawMems.isEmpty) return null;
+
+    final fallbackGl = normShift == 'RED' ? 'KAMALUDIN' : 'DWI MULYONO';
+    final fallbackTl = normShift == 'RED'
+        ? 'MASRURI / TRI RUSTIANTORO'
+        : 'DADANG SURYADI / NUNU FATULAH';
+
+    final glRow = rawMems.cast<Map<String, dynamic>?>().firstWhere(
+          (m) => (m?['role'] ?? '').toString().toUpperCase() == 'GL',
+          orElse: () => null,
+        );
+    final tlRows = rawMems
+        .where((m) => (m['role'] ?? '').toString().toUpperCase() == 'TL')
+        .map((m) => (m['name'] ?? '').toString().trim())
+        .where((n) => n.isNotEmpty)
+        .toList();
+    final glName = (glRow?['name'] ?? '').toString().trim().isNotEmpty
+        ? (glRow!['name']).toString().trim()
+        : fallbackGl;
+    final tlNames = tlRows.isNotEmpty ? tlRows.join(' / ') : fallbackTl;
+    final roster = <MemberAbsen>[];
+    for (var i = 0; i < rawMems.length; i++) {
+      final m = rawMems[i];
+      final role = (m['role'] ?? 'TM').toString();
+      final pos = (m['default_pos'] ?? 'Pos 1').toString();
+      roster.add(MemberAbsen(
+        id: (m['id'] as num?)?.toInt() ?? (i + 1),
+        name: (m['name'] ?? '').toString(),
+        noreg: (m['noreg'] ?? '').toString(),
+        status: 'Hadir',
+        note: '$role • $pos',
+      ));
+    }
+    return (gl: glName, tl: tlNames, members: roster);
+  }
+
+  /// 1:1 Next.js Checksheet Loader (`loadReportFromMySQL` di `app/productivity/checksheet/page.tsx`):
+  /// 1. Prioritaskan request tunggal `get_report` terlebih dulu (tanpa membanjiri `bungtemin.net` dengan 5 koneksi paralel sekaligus).
+  ///    Jika timeout sementara, otomatis retry 1x.
+  /// 2. Jika `found == true`, langsung merestorasi seluruh laporan MySQL (jam kerja, problem, absensi, CBU, CKD, No Body, OT) secara instan,
+  ///    lalu memperbarui cache master di background.
+  /// 3. Jika `found == false` (belum ada di MySQL), mengambil master `get_settings`, `get_members`, `templates`, & `monthly_reports`
+  ///    dalam 2 gelombang ringan (masing-masing 2 request) untuk merakit Checksheet Harian 100% sesuai parameter server & Monthly Plan.
+  /// 4. Jika `!repRes.ok` (offline / 401 / server error), TIDAK PERNAH dianggap `found == false`; langsung mengembalikan status offline/error yang jujur.
   Future<OnlineChecksheetLoadResult> loadOrCreateReportForDateShift({
     required String date,
     required String shift,
     String? sessionOverride,
     String? templateOverride,
     bool forceRefreshFromServer = false,
+    void Function(String step)? onProgress,
   }) async {
     final cfg = await getSettings();
     final normShift = shift.toUpperCase() == 'RED' ? 'RED' : 'WHITE';
     final line = cfg.lineName.trim().isEmpty ? 'UB Assy' : cfg.lineName.trim();
     final reportId = UbMasterData.makeReportId(date, normShift, line);
 
-    final cachedTemplates = await getCachedTemplates();
-    final cachedStruct = await getCachedStructure(normShift);
-    final existingLocal = await getReport(reportId);
-
-    final ym = date.length >= 7 ? date.substring(0, 7) : UbMasterData.wibToday().substring(0, 7);
-
-    // Parallel burst via authenticated Next.js `/api/ub` gateway
-    final responses = await Future.wait([
-      UbWebApi.instance.getUb({
-        'action': 'get_report',
-        'date': date,
-        'shift': normShift,
-        'line': line,
-      }),
-      UbWebApi.instance.getUb({'action': 'get_settings'}),
-      UbWebApi.instance.getUb({
-        'action': 'templates',
-        'takt_time': '${cfg.taktTime}',
-      }),
-      UbWebApi.instance.getUb({
-        'action': 'get_members',
-        'shift': normShift,
-      }),
-      UbWebApi.instance.getUb({
-        'action': 'monthly_reports',
-        'year_month': ym,
-      }),
-    ]);
-
-    var repRes = responses[0];
-    final setRes = responses[1];
-    final tplRes = responses[2];
-    final memRes = responses[3];
-    final monRes = responses[4];
-
-    final anyOnline = repRes.ok || setRes.ok || tplRes.ok || memRes.ok || monRes.ok;
-
-    // 1. Parse Global Settings (`line_name`, `current_takt_time`, `models`, `ckd_parts`)
-    var effectiveLine = line;
-    var effectiveTakt = cfg.taktTime;
-    List<CbuModelItem>? masterCbu;
-    List<CkdPartItem>? masterCkd;
-    if (setRes.ok && setRes.map['status'] == 'success' && setRes.map['data'] is Map) {
-      final sd = Map<String, dynamic>.from(setRes.map['data'] as Map);
-      final sLine = (sd['line_name'] ?? '').toString().trim();
-      if (sLine.isNotEmpty) effectiveLine = sLine;
-      final sTakt = (sd['current_takt_time'] as num?)?.toDouble();
-      if (sTakt != null && sTakt > 0) effectiveTakt = sTakt;
-
-      if (sd['models'] is List) {
-        final parsedModels = (sd['models'] as List)
-            .whereType<Map>()
-            .map((e) => Map<String, dynamic>.from(e))
-            .where((m) => (m['code'] ?? '').toString() != 'ckd')
-            .map((m) => CbuModelItem(
-                  code: (m['code'] ?? '').toString(),
-                  name: (m['name'] ?? m['code'] ?? '').toString().toUpperCase(),
-                  qty: 0,
-                  ratio: (m['ratio'] as num?)?.toDouble() ?? 1.0,
-                ))
-            .where((m) => m.code.isNotEmpty)
-            .toList();
-        if (parsedModels.isNotEmpty) masterCbu = parsedModels;
-      }
-
-      if (sd['ckd_parts'] is List) {
-        final parsedCkd = (sd['ckd_parts'] as List)
-            .whereType<Map>()
-            .map((e) => CkdPartItem.fromJson(Map<String, dynamic>.from(e))..qty = 0)
-            .where((p) => p.partNo.isNotEmpty)
-            .toList();
-        if (parsedCkd.isNotEmpty) masterCkd = parsedCkd;
-      }
-
-      if (cfg.taktTime != effectiveTakt || cfg.lineName != effectiveLine) {
-        cfg
-          ..taktTime = effectiveTakt
-          ..lineName = effectiveLine;
-        await saveSettings(cfg);
-      }
-    }
-
-    // 2. Parse Master Shift Templates from Server
-    var activeTemplates = cachedTemplates;
-    if (tplRes.ok && tplRes.map['status'] == 'success' && tplRes.map['data'] is List) {
-      final parsedTpls = (tplRes.map['data'] as List)
-          .whereType<Map>()
-          .map((e) => ShiftTemplate.fromJson(Map<String, dynamic>.from(e)))
-          .where((t) => t.slots.isNotEmpty)
-          .toList();
-      if (parsedTpls.isNotEmpty) {
-        activeTemplates = parsedTpls;
-        await _saveCachedTemplates(parsedTpls);
-      }
-    }
-
-    // 3. Parse Team Structure & Roster (`GL`, `TL`, `members`)
-    var activeStruct = cachedStruct ??
+    var activeTemplates = await getCachedTemplates();
+    var activeStruct = await getCachedStructure(normShift) ??
         (
           gl: normShift == 'RED' ? 'KAMALUDIN' : 'DWI MULYONO',
           tl: normShift == 'RED' ? 'MASRURI / TRI RUSTIANTORO' : 'DADANG SURYADI / NUNU FATULAH',
           members: UbMasterData.defaultMembers(normShift),
         );
-    if (memRes.ok && memRes.map['status'] == 'success' && memRes.map['data'] is List) {
-      final rawMems = (memRes.map['data'] as List)
-          .whereType<Map>()
-          .map((e) => Map<String, dynamic>.from(e))
-          .toList();
-      if (rawMems.isNotEmpty) {
-        final glRow = rawMems.cast<Map<String, dynamic>?>().firstWhere(
-              (m) => (m?['role'] ?? '').toString().toUpperCase() == 'GL',
-              orElse: () => null,
-            );
-        final tlRows = rawMems
-            .where((m) => (m['role'] ?? '').toString().toUpperCase() == 'TL')
-            .map((m) => (m['name'] ?? '').toString().trim())
-            .where((n) => n.isNotEmpty)
-            .toList();
-        final glName = (glRow?['name'] ?? '').toString().trim().isNotEmpty
-            ? (glRow!['name']).toString().trim()
-            : activeStruct.gl;
-        final tlNames = tlRows.isNotEmpty ? tlRows.join(' / ') : activeStruct.tl;
-        final roster = <MemberAbsen>[];
-        for (var i = 0; i < rawMems.length; i++) {
-          final m = rawMems[i];
-          final role = (m['role'] ?? 'TM').toString();
-          final pos = (m['default_pos'] ?? 'Pos 1').toString();
-          roster.add(MemberAbsen(
-            id: (m['id'] as num?)?.toInt() ?? (i + 1),
-            name: (m['name'] ?? '').toString(),
-            noreg: (m['noreg'] ?? '').toString(),
-            status: 'Hadir',
-            note: '$role • $pos',
-          ));
-        }
-        activeStruct = (gl: glName, tl: tlNames, members: roster);
-        await _saveCachedStructure(normShift, activeStruct);
-      }
+    final existingLocal = await getReport(reportId);
+    final ym = date.length >= 7 ? date.substring(0, 7) : UbMasterData.wibToday().substring(0, 7);
+
+    // STEP 1: Fokus ambil `get_report` dari MySQL terlebih dahulu (1 koneksi bersih seperti Next.js)
+    onProgress?.call('Mengambil laporan MySQL ($date • $normShift)...');
+    var repRes = await UbWebApi.instance.getUb({
+      'action': 'get_report',
+      'date': date,
+      'shift': normShift,
+      'line': line,
+    });
+
+    // Retry 1x bila gagal jaringan / timeout (kecuali 401 Unauthorized)
+    if (!repRes.ok && repRes.statusCode != 401) {
+      onProgress?.call('Menghubungi ulang server MySQL...');
+      repRes = await UbWebApi.instance.getUb({
+        'action': 'get_report',
+        'date': date,
+        'shift': normShift,
+        'line': line,
+      });
     }
 
-    // 4. Parse Monthly Reports (for Prev Body Finish + alternate line_name detection)
-    final monthlyList = <Map<String, dynamic>>[];
-    if (monRes.ok) {
-      final raw = monRes.map['data'] is List
-          ? monRes.map['data'] as List
-          : (monRes.map['reports'] is List ? monRes.map['reports'] as List : const []);
-      for (final item in raw) {
-        if (item is Map) monthlyList.add(Map<String, dynamic>.from(item));
-      }
-    }
-
-    // If `get_report` with `line` was not found, check if `monthly_reports` has an entry for `(date, normShift)` under a different `line_name`
-    if (repRes.ok && repRes.map['found'] != true && monthlyList.isNotEmpty) {
-      final altMatch = monthlyList.cast<Map<String, dynamic>?>().firstWhere(
-            (m) =>
-                (m?['tanggal'] ?? '').toString().split('T').first == date &&
-                (m?['shift'] ?? '').toString().toUpperCase() == normShift,
-            orElse: () => null,
-          );
-      final altLine = (altMatch?['line_name'] ?? '').toString().trim();
-      if (altLine.isNotEmpty && altLine.toLowerCase() != line.toLowerCase()) {
-        final retry = await UbWebApi.instance.getUb({
-          'action': 'get_report',
-          'date': date,
-          'shift': normShift,
-          'line': altLine,
-        });
-        if (retry.ok && retry.map['found'] == true) {
-          repRes = retry;
-        }
-      }
-    }
-
-    // Helper for computing previous shift finish from `monthlyList` (1:1 Next.js `fetchPrevShiftFinish`)
-    Future<({String finish, String label})?> resolvePrevCarry(bool isNight) async {
+    // Helper untuk menghitung No Body Finish shift sebelumnya dari `monthlyList` (1:1 Next.js `fetchPrevShiftFinish`)
+    Future<({String finish, String label})?> resolvePrevCarry(
+      bool isNight,
+      List<Map<String, dynamic>> monthlyList,
+      String targetLine,
+    ) async {
       if (monthlyList.isNotEmpty) {
-        final normLine = effectiveLine.trim().toLowerCase();
+        final normLine = targetLine.trim().toLowerCase();
         final cands = monthlyList.where((m) {
           final repDate = (m['tanggal'] ?? '').toString().split('T').first.trim();
           final repShift = (m['shift'] ?? '').toString().toUpperCase();
@@ -549,33 +509,52 @@ class LocalStore {
     }
 
     // =========================================================================
-    // CASE A: ONLINE & FOUND IN MYSQL -> RESTORE FULL SAVED CHECKSHEET (1:1 Next.js)
+    // CASE A: ONLINE & DITEMUKAN DI MYSQL -> TAMPILKAN LANGSUNG DATA SERVER!
     // =========================================================================
     if (repRes.ok &&
         repRes.map['status'] == 'success' &&
         repRes.map['found'] == true &&
         repRes.map['laporan'] is Map) {
+      onProgress?.call('Menyusun lembar Checksheet dari MySQL...');
       final decoded = repRes.map;
       final lap = Map<String, dynamic>.from(decoded['laporan'] as Map);
       final isNightLap = (lap['template_code'] ?? '').toString().toLowerCase().contains('malam');
-      final prevInfo = await resolvePrevCarry(isNightLap);
+      final savedBodyStart = (lap['no_body_start'] ?? '').toString().trim();
 
-      final parsed = _parseFullServerResponse(
+      // Hanya panggil `monthly_reports` bila `no_body_start` pada laporan server masih kosong
+      final monthlyList = <Map<String, dynamic>>[];
+      if (savedBodyStart.isEmpty) {
+        final monRes = await UbWebApi.instance.getUb({
+          'action': 'monthly_reports',
+          'year_month': ym,
+        });
+        if (monRes.ok) {
+          final raw = monRes.map['data'] is List
+              ? monRes.map['data'] as List
+              : (monRes.map['reports'] is List ? monRes.map['reports'] as List : const []);
+          for (final item in raw) {
+            if (item is Map) monthlyList.add(Map<String, dynamic>.from(item));
+          }
+        }
+      }
+      final prevInfo = await resolvePrevCarry(isNightLap, monthlyList, line);
+
+      final parsed = parseServerReportPayload(
         decoded: decoded,
         lap: lap,
         fallbackDate: date,
         fallbackShift: normShift,
-        effectiveLine: effectiveLine,
-        effectiveTakt: effectiveTakt,
+        effectiveLine: line,
+        effectiveTakt: cfg.taktTime,
         cfg: cfg,
         struct: activeStruct,
-        masterCbu: masterCbu,
-        masterCkd: masterCkd,
+        masterCbu: null,
+        masterCkd: null,
         templates: activeTemplates,
         prevCarry: prevInfo,
       );
 
-      // If user explicitly switched template/session in UI, apply on top of loaded report only when requested
+      // Jika user secara eksplisit mengganti template/sesi di toolbar, terapkan di atas slot yang sudah dimuat
       if (templateOverride != null && templateOverride != parsed.templateCode) {
         parsed.templateCode = templateOverride;
         parsed.session = templateOverride.toLowerCase().contains('malam') ? 'night' : 'day';
@@ -591,59 +570,189 @@ class LocalStore {
       }
 
       await saveReport(parsed);
+      unawaited(_refreshMasterCachesInBackground(normShift, parsed.taktTime));
+
+      final draftCandidate = (!forceRefreshFromServer &&
+              existingLocal != null &&
+              existingLocal.syncStatus != 'synced' &&
+              existingLocal.hasUserEdits)
+          ? existingLocal
+          : null;
+
       return OnlineChecksheetLoadResult(
         online: true,
         foundInServer: true,
         report: parsed,
         templates: activeTemplates,
         prevCarry: prevInfo,
-        message: 'Data hari ini ($normShift) dimuat dari server',
+        unsyncedLocalDraft: draftCandidate,
+        message: 'Data Checksheet ($normShift • ${UbMasterData.formatDDMMYYYY(date)}) berhasil dimuat dari server MySQL',
       );
     }
 
     // =========================================================================
-    // CASE B: ONLINE & NOT FOUND IN MYSQL -> TAMPILKAN SESUAI TEMPLATE HARIAN (1:1 Next.js)
+    // CASE B: ONLINE & BELUM ADA DI MYSQL -> RAKIT DARI PARAMETER SERVER TERBARU
     // =========================================================================
-    if (anyOnline) {
-      // Preserve local draft ONLY if user actually edited cells and hasn't synced yet
-      if (!forceRefreshFromServer &&
-          sessionOverride == null &&
-          templateOverride == null &&
-          existingLocal != null &&
-          existingLocal.syncStatus != 'synced' &&
-          existingLocal.hasUserEdits) {
-        final prevInfo = await resolvePrevCarry(existingLocal.session == 'night');
-        return OnlineChecksheetLoadResult(
-          online: true,
-          foundInServer: false,
-          report: existingLocal,
-          templates: activeTemplates,
-          prevCarry: prevInfo,
-          message: 'Melanjutkan draft lokal ($normShift)',
-        );
+    if (repRes.ok && repRes.map['status'] == 'success') {
+      onProgress?.call('Mengambil pengaturan lini & struktur regu...');
+      final batch1 = await Future.wait([
+        UbWebApi.instance.getUb({'action': 'get_settings'}),
+        UbWebApi.instance.getUb({'action': 'get_members', 'shift': normShift}),
+      ]);
+      final setRes = batch1[0];
+      final memRes = batch1[1];
+
+      var effectiveLine = line;
+      var effectiveTakt = cfg.taktTime;
+      List<CbuModelItem>? masterCbu;
+      List<CkdPartItem>? masterCkd;
+
+      if (setRes.ok && setRes.map['status'] == 'success' && setRes.map['data'] is Map) {
+        final sd = Map<String, dynamic>.from(setRes.map['data'] as Map);
+        final sLine = (sd['line_name'] ?? '').toString().trim();
+        if (sLine.isNotEmpty) effectiveLine = sLine;
+        final sTakt = (sd['current_takt_time'] as num?)?.toDouble();
+        if (sTakt != null && sTakt > 0) effectiveTakt = sTakt;
+
+        if (sd['models'] is List) {
+          final parsedModels = (sd['models'] as List)
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .where((m) => (m['code'] ?? '').toString() != 'ckd')
+              .map((m) => CbuModelItem(
+                    code: (m['code'] ?? '').toString(),
+                    name: (m['name'] ?? m['code'] ?? '').toString().toUpperCase(),
+                    qty: 0,
+                    ratio: (m['ratio'] as num?)?.toDouble() ?? 1.0,
+                  ))
+              .where((m) => m.code.isNotEmpty)
+              .toList();
+          if (parsedModels.isNotEmpty) masterCbu = parsedModels;
+        }
+
+        if (sd['ckd_parts'] is List) {
+          final parsedCkd = (sd['ckd_parts'] as List)
+              .whereType<Map>()
+              .map((e) => CkdPartItem.fromJson(Map<String, dynamic>.from(e))..qty = 0)
+              .where((p) => p.partNo.isNotEmpty)
+              .toList();
+          if (parsedCkd.isNotEmpty) masterCkd = parsedCkd;
+        }
+
+        if (cfg.taktTime != effectiveTakt) {
+          cfg.taktTime = effectiveTakt;
+          await saveSettings(cfg);
+        }
+      }
+
+      if (memRes.ok && memRes.map['status'] == 'success' && memRes.map['data'] is List) {
+        final parsedStruct = _extractStructFromRawMembers(normShift, memRes.map['data'] as List);
+        if (parsedStruct != null) {
+          activeStruct = parsedStruct;
+          await _saveCachedStructure(normShift, parsedStruct);
+        }
+      }
+
+      onProgress?.call('Menyinkronkan template jam kerja & riwayat No Body...');
+      final batch2 = await Future.wait([
+        UbWebApi.instance.getUb({'action': 'templates', 'takt_time': '$effectiveTakt'}),
+        UbWebApi.instance.getUb({'action': 'monthly_reports', 'year_month': ym}),
+      ]);
+      final tplRes = batch2[0];
+      final monRes = batch2[1];
+
+      if (tplRes.ok && tplRes.map['status'] == 'success' && tplRes.map['data'] is List) {
+        final parsedTpls = (tplRes.map['data'] as List)
+            .whereType<Map>()
+            .map((e) => ShiftTemplate.fromJson(Map<String, dynamic>.from(e)))
+            .where((t) => t.slots.isNotEmpty)
+            .toList();
+        if (parsedTpls.isNotEmpty) {
+          activeTemplates = parsedTpls;
+          await _saveCachedTemplates(parsedTpls);
+        }
+      }
+
+      final monthlyList = <Map<String, dynamic>>[];
+      if (monRes.ok) {
+        final raw = monRes.map['data'] is List
+            ? monRes.map['data'] as List
+            : (monRes.map['reports'] is List ? monRes.map['reports'] as List : const []);
+        for (final item in raw) {
+          if (item is Map) monthlyList.add(Map<String, dynamic>.from(item));
+        }
+      }
+
+      // Cek apakah laporan tanggal+shift tersimpan dengan `line_name` berbeda di `monthly_reports`
+      if (monthlyList.isNotEmpty) {
+        final altMatch = monthlyList.cast<Map<String, dynamic>?>().firstWhere(
+              (m) =>
+                  (m?['tanggal'] ?? '').toString().split('T').first == date &&
+                  (m?['shift'] ?? '').toString().toUpperCase() == normShift,
+              orElse: () => null,
+            );
+        final altLine = (altMatch?['line_name'] ?? '').toString().trim();
+        if (altLine.isNotEmpty && altLine.toLowerCase() != line.toLowerCase()) {
+          final retry = await UbWebApi.instance.getUb({
+            'action': 'get_report',
+            'date': date,
+            'shift': normShift,
+            'line': altLine,
+          });
+          if (retry.ok && retry.map['found'] == true && retry.map['laporan'] is Map) {
+            final lap = Map<String, dynamic>.from(retry.map['laporan'] as Map);
+            final isNightLap = (lap['template_code'] ?? '').toString().toLowerCase().contains('malam');
+            final prevInfo = await resolvePrevCarry(isNightLap, monthlyList, altLine);
+            final parsed = parseServerReportPayload(
+              decoded: retry.map,
+              lap: lap,
+              fallbackDate: date,
+              fallbackShift: normShift,
+              effectiveLine: altLine,
+              effectiveTakt: effectiveTakt,
+              cfg: cfg,
+              struct: activeStruct,
+              masterCbu: masterCbu,
+              masterCkd: masterCkd,
+              templates: activeTemplates,
+              prevCarry: prevInfo,
+            );
+            await saveReport(parsed);
+            return OnlineChecksheetLoadResult(
+              online: true,
+              foundInServer: true,
+              report: parsed,
+              templates: activeTemplates,
+              prevCarry: prevInfo,
+              message: 'Data Checksheet ($normShift) berhasil dimuat dari server MySQL',
+            );
+          }
+        }
       }
 
       final mp = repRes.map['monthly_plan'] is Map
           ? Map<String, dynamic>.from(repRes.map['monthly_plan'] as Map)
           : null;
 
-      // Determine session & CCR/OT plan from monthly_plan or daily default
       String resolvedSession = sessionOverride ?? '';
       if (resolvedSession.isEmpty && templateOverride != null) {
         resolvedSession = templateOverride.toLowerCase().contains('malam') ? 'night' : 'day';
       }
       if (resolvedSession.isEmpty && mp != null) {
-        final mpSess = (normShift == 'RED' ? mp['red_session'] : mp['white_session'])?.toString().toLowerCase() ?? '';
+        final mpSess =
+            (normShift == 'RED' ? mp['red_session'] : mp['white_session'])?.toString().toLowerCase() ?? '';
         if (mpSess == 'day' || mpSess == 'night') {
           resolvedSession = mpSess;
         }
       }
       if (resolvedSession.isEmpty) {
-        resolvedSession = 'day';
+        resolvedSession = UbMasterData.rotationSessionForShift(date, normShift);
       }
 
       int? planCcr;
-      var planOtHours = 2;
+      var planOtSlots = 2;
+      double? planOtHoursExact;
+      int? planOtUnitsExact;
       if (mp != null) {
         final rawPlan = normShift == 'RED'
             ? (mp['red_plan'] ?? mp['day_plan'])
@@ -653,10 +762,17 @@ class LocalStore {
 
         final rawOt = normShift == 'RED' ? mp['red_ot_hours'] : mp['white_ot_hours'];
         final otVal = (rawOt as num?)?.toDouble() ?? double.tryParse('${rawOt ?? ''}') ?? -1;
-        if (otVal >= 0) planOtHours = otVal.ceil().clamp(0, 3);
+        if (otVal >= 0) {
+          planOtHoursExact = otVal;
+          planOtSlots = otVal.ceil().clamp(0, 3);
+        }
+
+        final rawOtU = normShift == 'RED' ? mp['red_ot_plan'] : mp['white_ot_plan'];
+        final otUVal = (rawOtU as num?)?.toInt() ?? int.tryParse('${rawOtU ?? 0}') ?? 0;
+        if (otUVal > 0) planOtUnitsExact = otUVal;
       }
 
-      final prevInfo = await resolvePrevCarry(resolvedSession == 'night');
+      final prevInfo = await resolvePrevCarry(resolvedSession == 'night', monthlyList, effectiveLine);
       final freshCfg = UbSettings.fromJson(cfg.toJson())
         ..lineName = effectiveLine
         ..taktTime = effectiveTakt;
@@ -667,7 +783,9 @@ class LocalStore {
         cfg: freshCfg,
         sessionOverride: resolvedSession,
         templateOverride: templateOverride,
-        overtimeHours: planOtHours,
+        overtimeHours: planOtSlots,
+        planOtHoursOverride: planOtHoursExact,
+        planOtUnitsOverride: planOtUnitsExact,
         picOverride: activeStruct.gl,
         spvOverride: activeStruct.tl,
         ccrOverride: planCcr,
@@ -678,28 +796,47 @@ class LocalStore {
         customTemplates: activeTemplates,
       );
 
+      final draftCandidate = (!forceRefreshFromServer &&
+              sessionOverride == null &&
+              templateOverride == null &&
+              existingLocal != null &&
+              existingLocal.syncStatus != 'synced' &&
+              existingLocal.hasUserEdits)
+          ? existingLocal
+          : null;
+
       return OnlineChecksheetLoadResult(
         online: true,
         foundInServer: false,
         report: freshTemplateReport,
         templates: activeTemplates,
         prevCarry: prevInfo,
-        message: 'Belum ada laporan di server — menampilkan sesuai Template ${UbMasterData.getTemplate(freshTemplateReport.templateCode, customTemplates: activeTemplates).name}',
+        unsyncedLocalDraft: draftCandidate,
+        message:
+            'Terhubung ke server — menampilkan jadwal ${UbMasterData.getTemplate(freshTemplateReport.templateCode, customTemplates: activeTemplates).name}',
       );
     }
 
     // =========================================================================
-    // CASE C: OFFLINE FALLBACK -> PAKAI CACHE LOKAL ATAU TEMPLATE LOKAL
+    // CASE C: GAGAL TERHUBUNG KE SERVER / 401 / OFFLINE -> FALLBACK LOKAL JUJUR
     // =========================================================================
+    final isUnauth = repRes.statusCode == 401;
+    final errDetail = isUnauth
+        ? 'Sesi login kedaluwarsa (401) — silakan login ulang'
+        : (repRes.statusCode > 0
+            ? 'Server mengembalikan HTTP ${repRes.statusCode}'
+            : 'Tidak dapat terhubung ke server MySQL (periksa koneksi internet)');
+
     final prevOffline = await findLatestPrevFinish(date, normShift, sessionOverride == 'night');
     if (existingLocal != null && sessionOverride == null && templateOverride == null) {
       return OnlineChecksheetLoadResult(
         online: false,
         foundInServer: false,
+        unauthorized: isUnauth,
         report: existingLocal,
         templates: activeTemplates,
         prevCarry: prevOffline,
-        message: 'Mode offline — menampilkan data lokal ($normShift)',
+        message: '$errDetail — menampilkan cache lokal ($normShift)',
       );
     }
 
@@ -707,7 +844,7 @@ class LocalStore {
       date: date,
       shift: normShift,
       cfg: cfg,
-      sessionOverride: sessionOverride,
+      sessionOverride: sessionOverride ?? UbMasterData.rotationSessionForShift(date, normShift),
       templateOverride: templateOverride,
       picOverride: activeStruct.gl,
       spvOverride: activeStruct.tl,
@@ -718,14 +855,15 @@ class LocalStore {
     return OnlineChecksheetLoadResult(
       online: false,
       foundInServer: false,
+      unauthorized: isUnauth,
       report: offlineDraft,
       templates: activeTemplates,
       prevCarry: prevOffline,
-      message: 'Mode offline — menampilkan sesuai Template Harian',
+      message: '$errDetail — menampilkan template offline',
     );
   }
 
-  ChecksheetReport _parseFullServerResponse({
+  ChecksheetReport parseServerReportPayload({
     required Map<String, dynamic> decoded,
     required Map<String, dynamic> lap,
     required String fallbackDate,
@@ -942,6 +1080,14 @@ class LocalStore {
     final actOtU = (lap['act_ot_units'] as num?)?.toInt() ??
         int.tryParse('${lap['act_ot_units'] ?? 0}') ??
         0;
+    final otPlanH = (lap['ot_plan_hours'] as num?)?.toDouble() ??
+        double.tryParse('${lap['ot_plan_hours'] ?? ''}');
+    final otPlanU = (lap['ot_plan_units'] as num?)?.toInt() ??
+        int.tryParse('${lap['ot_plan_units'] ?? ''}');
+    final directIntD = (lap['int_delay_min'] as num?)?.toDouble() ??
+        double.tryParse('${lap['int_delay_min'] ?? ''}');
+    final directExtD = (lap['ext_delay_min'] as num?)?.toDouble() ??
+        double.tryParse('${lap['ext_delay_min'] ?? ''}');
 
     return ChecksheetReport(
       id: UbMasterData.makeReportId(dt, sh, line),
@@ -962,6 +1108,10 @@ class LocalStore {
       jamStopProduksi: (lap['jam_stop_produksi'] ?? '').toString(),
       actOtHours: actOtH,
       actOtUnits: actOtU,
+      planOtHoursOverride: otPlanH,
+      planOtUnitsOverride: (otPlanU != null && otPlanU > 0) ? otPlanU : null,
+      directIntDelay: directIntD,
+      directExtDelay: directExtD,
       cbuSource: (lap['model_cbu_source'] ?? 'ratio').toString(),
       cbuModels: cbuModels,
       ckdParts: ckdParts,

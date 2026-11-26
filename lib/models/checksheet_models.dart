@@ -275,6 +275,8 @@ class TemplateSlotDef {
     required this.durationMin,
     required this.basePlan19,
     required this.basePlan16,
+    this.dynamicPlan,
+    this.appliedTaktTime,
     this.isOvertime = false,
     this.isActive = true,
   });
@@ -284,10 +286,12 @@ class TemplateSlotDef {
   final int durationMin;
   final int basePlan19;
   final int basePlan16;
+  final int? dynamicPlan;
+  final double? appliedTaktTime;
   final bool isOvertime;
   final bool isActive;
 
-  factory TemplateSlotDef.fromJson(Map<String, dynamic> j) {
+  factory TemplateSlotDef.fromJson(Map<String, dynamic> j, {double? parentAppliedTakt}) {
     final start = (j['start_time'] ?? j['startTime'] ?? '').toString().trim();
     final end = (j['end_time'] ?? j['endTime'] ?? '').toString().trim();
     final rawRange = (j['time_range'] ?? j['timeRange'] ?? '').toString().trim();
@@ -299,12 +303,15 @@ class TemplateSlotDef {
         ? true
         : (activeRaw != false && activeRaw != 0 && '$activeRaw' != '0');
     final otRaw = j['is_overtime'] ?? j['isOvertime'];
+    final dynRaw = j['dynamic_plan'] ?? j['dynamicPlan'];
     return TemplateSlotDef(
       slotNo: (j['slot_no'] ?? j['slotNo'] as num?)?.toInt() ?? 1,
       timeRange: resolvedRange,
       durationMin: (j['duration_min'] ?? j['durationMin'] as num?)?.toInt() ?? 60,
       basePlan19: (j['base_plan_19'] ?? j['basePlan19'] as num?)?.toInt() ?? 0,
       basePlan16: (j['base_plan_16'] ?? j['basePlan16'] as num?)?.toInt() ?? 0,
+      dynamicPlan: (dynRaw as num?)?.toInt(),
+      appliedTaktTime: (j['applied_takt_time'] as num?)?.toDouble() ?? parentAppliedTakt,
       isOvertime: otRaw == true || otRaw == 1 || '$otRaw' == '1',
       isActive: active,
     );
@@ -316,6 +323,8 @@ class TemplateSlotDef {
         'duration_min': durationMin,
         'base_plan_19': basePlan19,
         'base_plan_16': basePlan16,
+        if (dynamicPlan != null) 'dynamic_plan': dynamicPlan,
+        if (appliedTaktTime != null) 'applied_takt_time': appliedTaktTime,
         'is_overtime': isOvertime,
         'is_active': isActive,
       };
@@ -346,9 +355,10 @@ class ShiftTemplate {
     final rawSess = (j['time_session'] ?? j['timeSession'] ?? (code.startsWith('malam') ? 'night' : 'day'))
         .toString()
         .toLowerCase();
+    final appliedTt = (j['applied_takt_time'] ?? j['appliedTaktTime'] as num?)?.toDouble();
     final rawSlots = (j['slots'] as List?)
             ?.whereType<Map>()
-            .map((e) => TemplateSlotDef.fromJson(Map<String, dynamic>.from(e)))
+            .map((e) => TemplateSlotDef.fromJson(Map<String, dynamic>.from(e), parentAppliedTakt: appliedTt))
             .toList() ??
         const <TemplateSlotDef>[];
     return ShiftTemplate(
@@ -456,6 +466,10 @@ class ChecksheetReport {
     this.jamStopProduksi = '',
     this.actOtHours = 0,
     this.actOtUnits = 0,
+    this.planOtHoursOverride,
+    this.planOtUnitsOverride,
+    this.directIntDelay,
+    this.directExtDelay,
     this.cbuSource = 'ratio',
     required this.cbuModels,
     required this.ckdParts,
@@ -484,6 +498,10 @@ class ChecksheetReport {
   String jamStopProduksi;
   double actOtHours;
   int actOtUnits;
+  double? planOtHoursOverride;
+  int? planOtUnitsOverride;
+  double? directIntDelay;
+  double? directExtDelay;
   String cbuSource; // ratio | manual
   List<CbuModelItem> cbuModels;
   List<CkdPartItem> ckdParts;
@@ -534,6 +552,10 @@ class ChecksheetReport {
       jamStopProduksi: (j['jamStopProduksi'] ?? '').toString(),
       actOtHours: (j['actOtHours'] as num?)?.toDouble() ?? 0,
       actOtUnits: (j['actOtUnits'] as num?)?.toInt() ?? 0,
+      planOtHoursOverride: (j['planOtHoursOverride'] as num?)?.toDouble(),
+      planOtUnitsOverride: (j['planOtUnitsOverride'] as num?)?.toInt(),
+      directIntDelay: (j['directIntDelay'] as num?)?.toDouble(),
+      directExtDelay: (j['directExtDelay'] as num?)?.toDouble(),
       cbuSource: (j['cbuSource'] ?? 'ratio').toString(),
       cbuModels: (j['cbuModels'] as List?)
               ?.whereType<Map>()
@@ -576,6 +598,10 @@ class ChecksheetReport {
         'jamStopProduksi': jamStopProduksi,
         'actOtHours': actOtHours,
         'actOtUnits': actOtUnits,
+        if (planOtHoursOverride != null) 'planOtHoursOverride': planOtHoursOverride,
+        if (planOtUnitsOverride != null) 'planOtUnitsOverride': planOtUnitsOverride,
+        if (directIntDelay != null) 'directIntDelay': directIntDelay,
+        if (directExtDelay != null) 'directExtDelay': directExtDelay,
         'cbuSource': cbuSource,
         'cbuModels': cbuModels.map((m) => m.toJson()).toList(),
         'ckdParts': ckdParts.map((p) => p.toJson()).toList(),
@@ -989,6 +1015,8 @@ class UbMasterData {
     String workMode = 'normal',
     String? templateOverride,
     int overtimeHours = 2,
+    double? planOtHoursOverride,
+    int? planOtUnitsOverride,
     String otAwal = 'none',
     String? picOverride,
     String? spvOverride,
@@ -1013,6 +1041,29 @@ class UbMasterData {
         ? addNumberPreservePad(autoStart, defCcr - 1)
         : '';
 
+    final builtSlots = buildSlotsFromTemplate(
+      tpl,
+      cfg.taktTime,
+      overtimeHours,
+      otAwalMode: otAwal,
+      customTemplates: customTemplates,
+    );
+
+    // Jika monthly_plan memiliki jam OT pecahan (mis. 0.5 jam = 16 unit), sesuaikan slot OT aktif terakhir
+    if (planOtHoursOverride != null && planOtHoursOverride > 0) {
+      final activeOt = builtSlots.where((s) => s.isOvertime && !s.isBlocked && !s.isEarlyOvertime).toList();
+      final frac = planOtHoursOverride - planOtHoursOverride.floor();
+      if (frac >= 0.25 && frac <= 0.75 && activeOt.isNotEmpty) {
+        final fullSlotsPlan = activeOt.take(activeOt.length - 1).fold<int>(0, (a, s) => a + s.plan);
+        final lastOt = activeOt.last;
+        if (planOtUnitsOverride != null && planOtUnitsOverride > fullSlotsPlan) {
+          lastOt.plan = planOtUnitsOverride - fullSlotsPlan;
+        } else {
+          lastOt.plan = (30 / (cfg.taktTime > 0 ? cfg.taktTime : 2.4)).round();
+        }
+      }
+    }
+
     return ChecksheetReport(
       id: makeReportId(date, normShift, cfg.lineName),
       tanggal: date,
@@ -1030,6 +1081,8 @@ class UbMasterData {
           (normShift == 'RED' ? 'MASRURI / TRI RUSTIANTORO' : 'DADANG SURYADI / NUNU FATULAH'),
       noBodyStart: autoStart,
       noBodyFinish: autoFin,
+      planOtHoursOverride: planOtHoursOverride,
+      planOtUnitsOverride: planOtUnitsOverride,
       cbuModels: (customCbuModels != null && customCbuModels.isNotEmpty)
           ? customCbuModels.map((m) => CbuModelItem(code: m.code, name: m.name, qty: 0, ratio: m.ratio)).toList()
           : defaultCbuModels(),
@@ -1039,13 +1092,7 @@ class UbMasterData {
       members: (customMembers != null && customMembers.isNotEmpty)
           ? customMembers.map((m) => m.copy()..status = 'Hadir').toList()
           : defaultMembers(normShift),
-      slots: buildSlotsFromTemplate(
-        tpl,
-        cfg.taktTime,
-        overtimeHours,
-        otAwalMode: otAwal,
-        customTemplates: customTemplates,
-      ),
+      slots: builtSlots,
       syncStatus: 'draft',
     );
   }
@@ -1115,7 +1162,12 @@ class UbMasterData {
       }
       var calcPlan = 0;
       if (isOtActive) {
-        if (isTt19 && sl.basePlan19 > 0) {
+        if (sl.dynamicPlan != null &&
+            sl.dynamicPlan! > 0 &&
+            sl.appliedTaktTime != null &&
+            (sl.appliedTaktTime! - takt).abs() < 0.05) {
+          calcPlan = sl.dynamicPlan!;
+        } else if (isTt19 && sl.basePlan19 > 0) {
           calcPlan = sl.basePlan19;
         } else if (isTt16 && sl.basePlan16 > 0) {
           calcPlan = sl.basePlan16;
@@ -1208,13 +1260,23 @@ class UbMasterData {
     final diff = anyFilled ? (cumAct - cumPlanFilled) : 0;
     final minusUnits = anyFilled ? math.max(0, cumPlanFilled - cumAct) : 0;
     final efficiency = cumPlanFilled > 0 ? formatEff((cumAct / cumPlanFilled) * 100) : (anyFilled ? '100' : '0');
+    final hasAnyProblem = rep.slots.any((r) => !r.isBlocked && (r.problems.isNotEmpty || r.problem.trim().isNotEmpty));
     final fallbackDelay = (totalDelay == 0 && minusUnits > 0)
         ? double.parse((minusUnits * takt).toStringAsFixed(1))
         : double.parse(totalDelay.toStringAsFixed(1));
-    final effIntDelay = intDelay > 0
+    var effIntDelay = intDelay > 0
         ? double.parse(intDelay.toStringAsFixed(1))
-        : (extDelay == 0 && fallbackDelay > 0 ? fallbackDelay : 0.0);
-    final effExtDelay = double.parse(extDelay.toStringAsFixed(1));
+        : (extDelay == 0 && fallbackDelay > 0 && rep.directExtDelay == null ? fallbackDelay : 0.0);
+    var effExtDelay = double.parse(extDelay.toStringAsFixed(1));
+    if (hasAnyProblem || diff < 0) {
+      if (rep.directIntDelay != null) {
+        effIntDelay = double.parse(math.max(effIntDelay, rep.directIntDelay!).toStringAsFixed(1));
+      }
+      if (rep.directExtDelay != null) {
+        effExtDelay = double.parse(math.max(effExtDelay, rep.directExtDelay!).toStringAsFixed(1));
+      }
+    }
+    final resolvedTotalDelay = double.parse(math.max(fallbackDelay, effIntDelay + effExtDelay).toStringAsFixed(1));
     final intLossU = (effIntDelay / takt).round();
     final extLossU = (effExtDelay / takt).round();
     final totLossU = intLossU + extLossU;
@@ -1235,8 +1297,9 @@ class UbMasterData {
 
     final effCcr = rep.ccrPlan > 0 ? rep.ccrPlan : cumPlan;
     final otSlots = rep.slots.where((r) => r.isOvertime && !r.isBlocked).toList();
-    final otPlanH = otSlots.fold<double>(0, (a, r) => a + (r.timeRange.contains('20:30') ? 0.5 : 1.0));
-    final otPlanU = otSlots.fold<int>(0, (a, r) => a + r.plan);
+    final otPlanH = rep.planOtHoursOverride ??
+        otSlots.fold<double>(0, (a, r) => a + (r.timeRange.contains('20:30') ? 0.5 : 1.0));
+    final otPlanU = rep.planOtUnitsOverride ?? otSlots.fold<int>(0, (a, r) => a + r.plan);
     final otActH = rep.actOtHours > 0 ? rep.actOtHours : otPlanH;
     final otActU = rep.actOtUnits > 0
         ? rep.actOtUnits
@@ -1316,7 +1379,7 @@ class UbMasterData {
       diff: diff,
       minusUnits: minusUnits,
       efficiency: efficiency,
-      totalDelayMin: fallbackDelay,
+      totalDelayMin: resolvedTotalDelay,
       intDelayMin: effIntDelay,
       extDelayMin: effExtDelay,
       intLossUnits: intLossU,

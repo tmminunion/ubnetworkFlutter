@@ -37,32 +37,39 @@ class _ChecksheetScreenState extends State<ChecksheetScreen> {
   ({String finish, String label})? _prevCarry;
 
   bool _fetchingOnline = true;
+  bool _hasLoadedInitialServer = false;
   bool _isOnline = true;
   bool _foundInServer = false;
   bool _syncing = false;
   bool _printing = false;
   double _currentScale = 0.45;
   int _loadSeq = 0;
+  String _loadingStepText = 'Sinkronisasi parameter lini & laporan MySQL...';
+  String _loadingTargetDate = '';
+  String _loadingTargetShift = '';
 
   @override
   void initState() {
     super.initState();
     _transformCtrl.addListener(_onMatrixChanged);
 
-    // 1:1 Next.js Smooth UX: Render kertas instan di frame ke-1 sesuai Template Harian (tanpa layar kosong / blocking spinner!)
     final userShift = (AuthService.instance.currentUser?.shift ?? '').toUpperCase();
     final initDate = widget.initialDate ?? UbMasterData.wibToday();
     final initShift = (widget.initialShift ??
             (userShift == 'RED' || userShift == 'WHITE' ? userShift : 'WHITE'))
         .toUpperCase();
+    final cleanShift = initShift == 'RED' ? 'RED' : 'WHITE';
+    _loadingTargetDate = initDate;
+    _loadingTargetShift = cleanShift;
     _rep = UbMasterData.createTemplateReport(
       date: initDate,
-      shift: initShift == 'RED' ? 'RED' : 'WHITE',
+      shift: cleanShift,
       cfg: _cfg,
+      sessionOverride: UbMasterData.rotationSessionForShift(initDate, cleanShift),
     );
 
     WidgetsBinding.instance.addPostFrameCallback((_) => _fitWidth());
-    _bootstrapOnline(initDate, initShift == 'RED' ? 'RED' : 'WHITE');
+    _bootstrapOnline(initDate, cleanShift);
   }
 
   @override
@@ -124,7 +131,8 @@ class _ChecksheetScreenState extends State<ChecksheetScreen> {
     _transformCtrl.value = m;
   }
 
-  /// Muat data checksheet secara smooth (optimistic template render + background online hydration 1:1 Next.js).
+  /// Alur 1:1 Next.js (`isLoadingMySQL`):
+  /// Buka -> Tampilkan Modal Loading & Kunci Input -> Ambil Data dari Server MySQL -> Tampilkan Checksheet!
   Future<void> _loadReport(
     String date,
     String shift, {
@@ -135,38 +143,12 @@ class _ChecksheetScreenState extends State<ChecksheetScreen> {
     final normShift = shift.toUpperCase() == 'RED' ? 'RED' : 'WHITE';
     final seq = ++_loadSeq;
 
-    // Optimistic instant template switch on canvas (0ms lag when changing date/shift/session)
-    final needsInstantSwitch = _rep.tanggal != date ||
-        _rep.shift != normShift ||
-        (sessionOverride != null && _rep.session != sessionOverride) ||
-        (templateOverride != null && _rep.templateCode != templateOverride);
-
-    if (needsInstantSwitch) {
-      final instantDraft = UbMasterData.createTemplateReport(
-        date: date,
-        shift: normShift,
-        cfg: _cfg,
-        sessionOverride: sessionOverride,
-        templateOverride: templateOverride,
-        customTemplates: _templates,
-      );
-      setState(() {
-        _rep = instantDraft;
-        _fetchingOnline = true;
-        _foundInServer = false;
-      });
-    } else {
-      setState(() => _fetchingOnline = true);
-    }
-
-    // Jika ada cache lokal yang sudah tersimpan untuk tanggal+shift ini, tampilkan instan sambil menunggu server terbaru
-    if (!forceRefreshFromServer && sessionOverride == null && templateOverride == null) {
-      final localId = UbMasterData.makeReportId(date, normShift, _cfg.lineName);
-      final quickLocal = await LocalStore.instance.getReport(localId);
-      if (mounted && seq == _loadSeq && quickLocal != null && quickLocal.hasUserEdits) {
-        setState(() => _rep = quickLocal);
-      }
-    }
+    setState(() {
+      _fetchingOnline = true;
+      _loadingTargetDate = date;
+      _loadingTargetShift = normShift;
+      _loadingStepText = 'Menghubungkan ke server UBnetwork...';
+    });
 
     final res = await LocalStore.instance.loadOrCreateReportForDateShift(
       date: date,
@@ -174,12 +156,18 @@ class _ChecksheetScreenState extends State<ChecksheetScreen> {
       sessionOverride: sessionOverride,
       templateOverride: templateOverride,
       forceRefreshFromServer: forceRefreshFromServer,
+      onProgress: (step) {
+        if (mounted && seq == _loadSeq) {
+          setState(() => _loadingStepText = step);
+        }
+      },
     );
 
     if (!mounted || seq != _loadSeq) return;
     final updatedCfg = await LocalStore.instance.getSettings();
     if (!mounted || seq != _loadSeq) return;
 
+    final firstLoad = !_hasLoadedInitialServer;
     setState(() {
       _cfg = updatedCfg;
       _templates = res.templates;
@@ -188,10 +176,42 @@ class _ChecksheetScreenState extends State<ChecksheetScreen> {
       _isOnline = res.online;
       _foundInServer = res.foundInServer;
       _fetchingOnline = false;
+      _hasLoadedInitialServer = true;
     });
 
-    if (forceRefreshFromServer) {
-      _toast(res.message, isErr: !res.online);
+    if (firstLoad) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _fitWidth());
+    }
+
+    if (!res.online) {
+      _toast(res.message, isErr: true);
+    } else if (res.unsyncedLocalDraft != null) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              '${res.message}. Ada draft lokal belum terkirim.',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            backgroundColor: UbColors.surface,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 5),
+            action: SnackBarAction(
+              label: 'Pulihkan Draft',
+              textColor: UbColors.cyan,
+              onPressed: () {
+                if (!mounted) return;
+                setState(() {
+                  _rep = res.unsyncedLocalDraft!;
+                  _foundInServer = false;
+                });
+              },
+            ),
+          ),
+        );
+    } else if (forceRefreshFromServer || res.foundInServer) {
+      _toast(res.message);
     }
   }
 
@@ -245,8 +265,8 @@ class _ChecksheetScreenState extends State<ChecksheetScreen> {
       final doc = pw.Document();
       doc.addPage(
         pw.Page(
-          pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.all(10),
+          pageFormat: PdfPageFormat.a3.landscape,
+          margin: pw.EdgeInsets.zero,
           build: (_) => pw.Center(
             child: pw.Image(memImage, fit: pw.BoxFit.contain),
           ),
@@ -489,27 +509,22 @@ class _ChecksheetScreenState extends State<ChecksheetScreen> {
                   const SizedBox(width: 4),
                   // Day / Night Session Quick Toggle (☀️D / 🌙N)
                   InkWell(
-                    onTap: () {
-                      final nextSess = rep.session == 'night' ? 'day' : 'night';
-                      final nextTpl = UbMasterData.defaultTemplateCode(
-                        rep.tanggal,
-                        session: nextSess,
-                        workMode: rep.workMode,
-                      );
-                      setState(() {
-                        rep.session = nextSess;
-                        rep.templateCode = nextTpl;
-                        if (nextSess == 'night') rep.otAwal = 'none';
-                        rep.slots = UbMasterData.buildSlotsFromTemplate(
-                          nextTpl,
-                          rep.taktTime,
-                          rep.overtimeHours,
-                          prevSlots: rep.slots,
-                          otAwalMode: rep.otAwal,
-                          customTemplates: _templates,
-                        );
-                      });
-                    },
+                    onTap: _fetchingOnline
+                        ? null
+                        : () {
+                            final nextSess = rep.session == 'night' ? 'day' : 'night';
+                            final nextTpl = UbMasterData.defaultTemplateCode(
+                              rep.tanggal,
+                              session: nextSess,
+                              workMode: rep.workMode,
+                            );
+                            _loadReport(
+                              rep.tanggal,
+                              rep.shift,
+                              sessionOverride: nextSess,
+                              templateOverride: nextTpl,
+                            );
+                          },
                     borderRadius: BorderRadius.circular(8),
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
@@ -639,36 +654,30 @@ class _ChecksheetScreenState extends State<ChecksheetScreen> {
               ),
             ),
 
-            // INTERACTIVE A3 i-REPORTER CANVAS (ALWAYS INSTANTLY VISIBLE — ZERO BLOCKING SPINNER)
+            // INTERACTIVE A3 i-REPORTER CANVAS + 1:1 NEXT.JS LOADING MODAL (`isLoadingMySQL`)
             Expanded(
               child: Stack(
                 children: [
                   Positioned.fill(child: CustomPaint(painter: _DotGridPainter())),
-                  if (_fetchingOnline)
-                    const Positioned(
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      child: LinearProgressIndicator(
-                        minHeight: 2,
-                        color: UbColors.cyan,
-                        backgroundColor: Colors.transparent,
-                      ),
-                    ),
-                  InteractiveViewer(
-                    transformationController: _transformCtrl,
-                    constrained: false,
-                    boundaryMargin: const EdgeInsets.all(320),
-                    minScale: 0.30,
-                    maxScale: 2.20,
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: RepaintBoundary(
-                        key: _paperBoundaryKey,
-                        child: ChecksheetPaper(
-                          report: rep,
-                          stats: stats,
-                          onTapHeader: () async {
+                  if (_hasLoadedInitialServer || !_fetchingOnline)
+                    AbsorbPointer(
+                      absorbing: _fetchingOnline,
+                      child: Opacity(
+                        opacity: _fetchingOnline ? 0.25 : 1.0,
+                        child: InteractiveViewer(
+                          transformationController: _transformCtrl,
+                          constrained: false,
+                          boundaryMargin: const EdgeInsets.all(320),
+                          minScale: 0.30,
+                          maxScale: 2.20,
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: RepaintBoundary(
+                              key: _paperBoundaryKey,
+                              child: ChecksheetPaper(
+                                report: rep,
+                                stats: stats,
+                                onTapHeader: () async {
                             final res = await ChecksheetModals.showHeaderModal(
                               context,
                               report: rep,
@@ -774,6 +783,8 @@ class _ChecksheetScreenState extends State<ChecksheetScreen> {
                       ),
                     ),
                   ),
+                ),
+              ),
 
                   // FLOATING SAVE BUTTON (BOTTOM LEFT)
                   Positioned(
@@ -873,6 +884,147 @@ class _ChecksheetScreenState extends State<ChecksheetScreen> {
                       ),
                     ),
                   ),
+
+                  // 1:1 NEXT.JS MODAL LOADING & BLOKIR INPUT SAAT AMBIL DATA MYSQL (`isLoadingMySQL`)
+                  if (_fetchingOnline)
+                    Positioned.fill(
+                      child: Container(
+                        color: const Color(0xCC020617),
+                        alignment: Alignment.center,
+                        padding: const EdgeInsets.all(20),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 360),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [Color(0xFF0F172A), Color(0xFF020617)],
+                              ),
+                              borderRadius: BorderRadius.circular(24),
+                              border: Border.all(color: UbColors.cyan.withValues(alpha: 0.45), width: 1.2),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: UbColors.cyan.withValues(alpha: 0.18),
+                                  blurRadius: 32,
+                                  spreadRadius: 2,
+                                ),
+                                const BoxShadow(color: Colors.black87, blurRadius: 24),
+                              ],
+                            ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SizedBox(
+                                  width: 58,
+                                  height: 58,
+                                  child: Stack(
+                                    alignment: Alignment.center,
+                                    children: [
+                                      SizedBox(
+                                        width: 56,
+                                        height: 56,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2.4,
+                                          color: UbColors.cyan.withValues(alpha: 0.45),
+                                        ),
+                                      ),
+                                      const SizedBox(
+                                        width: 40,
+                                        height: 40,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2.6,
+                                          color: UbColors.emerald,
+                                        ),
+                                      ),
+                                      Container(
+                                        width: 26,
+                                        height: 26,
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: UbColors.cyan.withValues(alpha: 0.16),
+                                        ),
+                                        child: const Icon(Icons.sync_rounded, size: 15, color: UbColors.cyan),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                const Text(
+                                  'Memuat Data Checksheet',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w900,
+                                    color: Colors.white,
+                                    letterSpacing: 0.3,
+                                  ),
+                                ),
+                                const SizedBox(height: 5),
+                                Text(
+                                  _loadingStepText,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(fontSize: 11.5, color: UbColors.textMuted),
+                                ),
+                                const SizedBox(height: 16),
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xCC020617),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      _loadingParamRow(
+                                        'Tanggal:',
+                                        UbMasterData.formatDDMMYYYY(
+                                          _loadingTargetDate.isNotEmpty ? _loadingTargetDate : rep.tanggal,
+                                        ),
+                                        UbColors.cyan,
+                                      ),
+                                      const SizedBox(height: 6),
+                                      _loadingParamRow(
+                                        'Shift / Sesi:',
+                                        'Regu ${_loadingTargetShift.isNotEmpty ? _loadingTargetShift : rep.shift} (${rep.session.toUpperCase()})',
+                                        UbColors.amber,
+                                      ),
+                                      const SizedBox(height: 6),
+                                      _loadingParamRow(
+                                        'Lini:',
+                                        rep.lineName.isNotEmpty ? rep.lineName : _cfg.lineName,
+                                        UbColors.emerald,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(99),
+                                  child: const LinearProgressIndicator(
+                                    minHeight: 5,
+                                    color: UbColors.emerald,
+                                    backgroundColor: Color(0xFF1E293B),
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                const Text(
+                                  'Input dikunci sementara selama memuat data server...',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontFamily: 'monospace',
+                                    fontSize: 10,
+                                    color: UbColors.textMuted,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -881,6 +1033,29 @@ class _ChecksheetScreenState extends State<ChecksheetScreen> {
       ),
     );
   }
+
+  Widget _loadingParamRow(String label, String val, Color valColor) => Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(fontFamily: 'monospace', fontSize: 11, color: UbColors.textMuted),
+          ),
+          Flexible(
+            child: Text(
+              val,
+              textAlign: TextAlign.right,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: valColor,
+              ),
+            ),
+          ),
+        ],
+      );
 
   Widget _dpadBtn(String label, VoidCallback onTap, {Color? bg, Color? fg}) => InkWell(
         onTap: onTap,

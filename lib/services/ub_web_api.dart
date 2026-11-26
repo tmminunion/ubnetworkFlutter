@@ -33,7 +33,7 @@ class UbWebApi {
   static final UbWebApi instance = UbWebApi._();
 
   static const String _kGateCookie = 'ubf_gate_cookie_v1';
-  static const Duration _defaultTimeout = Duration(seconds: 10);
+  static const Duration _defaultTimeout = Duration(seconds: 20);
 
   String get baseUrl => AuthService.gateBaseUrl;
 
@@ -149,7 +149,7 @@ class UbWebApi {
   /// Supports custom external `serverApiUrl` if an explicit `apiKey` is configured.
   Future<UbApiResponse> getUb(
     Map<String, String> query, {
-    Duration timeout = const Duration(seconds: 12),
+    Duration timeout = const Duration(seconds: 25),
   }) async {
     try {
       final cfg = await LocalStore.instance.getSettings();
@@ -168,7 +168,7 @@ class UbWebApi {
       }
 
       final res = await http.get(targetUri, headers: headers).timeout(timeout);
-      return _wrap(res);
+      return _wrap(res, checkAuth: !useCustomDirect);
     } catch (e) {
       return UbApiResponse(ok: false, statusCode: 0, error: e.toString());
     }
@@ -179,7 +179,7 @@ class UbWebApi {
     String action,
     Object? body, {
     Map<String, String>? extraQuery,
-    Duration timeout = const Duration(seconds: 15),
+    Duration timeout = const Duration(seconds: 25),
   }) async {
     try {
       final cfg = await LocalStore.instance.getSettings();
@@ -204,13 +204,13 @@ class UbWebApi {
       final res = await http
           .post(targetUri, headers: headers, body: body == null ? null : jsonEncode(body))
           .timeout(timeout);
-      return _wrap(res);
+      return _wrap(res, checkAuth: !useCustomDirect);
     } catch (e) {
       return UbApiResponse(ok: false, statusCode: 0, error: e.toString());
     }
   }
 
-  UbApiResponse _wrap(http.Response res) {
+  UbApiResponse _wrap(http.Response res, {bool checkAuth = true}) {
     dynamic parsed;
     try {
       parsed = res.body.isNotEmpty ? jsonDecode(res.body) : null;
@@ -218,10 +218,17 @@ class UbWebApi {
       parsed = null;
     }
     final ok = res.statusCode >= 200 && res.statusCode < 300;
+    if (checkAuth && res.statusCode == 401 && AuthService.instance.currentUser != null) {
+      // Hanya logout otomatis jika 401 berasal dari proxy gerbang (`{"error":"Unauthorized"}` / sesi habis)
+      final rawErr = (parsed is Map ? '${parsed['error'] ?? ''}' : '').toLowerCase();
+      if (rawErr.contains('unauthorized') || rawErr.contains('login ulang')) {
+        AuthService.instance.notifyUnauthorized();
+      }
+    }
     String? err;
     if (!ok) {
-      if (parsed is Map && parsed['error'] != null) {
-        err = '${parsed['error']}';
+      if (parsed is Map && (parsed['error'] != null || parsed['message'] != null)) {
+        err = '${parsed['error'] ?? parsed['message']}';
       } else {
         err = 'HTTP ${res.statusCode}';
       }
