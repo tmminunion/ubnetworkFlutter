@@ -1,22 +1,48 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/theme.dart';
 import '../../data/hub_catalog.dart';
 import '../display/display_paper_screen.dart';
 
-class DisplayBoardScreen extends StatelessWidget {
+class DisplayBoardScreen extends StatefulWidget {
   const DisplayBoardScreen({super.key});
+
+  @override
+  State<DisplayBoardScreen> createState() => _DisplayBoardScreenState();
+}
+
+class _DisplayBoardScreenState extends State<DisplayBoardScreen> {
+  @override
+  void initState() {
+    super.initState();
+    SystemChrome.setPreferredOrientations(const [
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+  }
+
+  @override
+  void dispose() {
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    SystemChrome.setPreferredOrientations(const [
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
-    final crossAxisCount = width >= 1100 ? 4 : (width >= 680 ? 2 : 1);
+    final crossAxisCount = width >= 1050 ? 4 : (width >= 680 ? 3 : 2);
 
     return Scaffold(
       backgroundColor: const Color(0xFF070B14),
       body: Stack(
         children: [
-          // Ambient glows matching /display/page.tsx
           Positioned(
             top: -120,
             left: -120,
@@ -46,57 +72,70 @@ class DisplayBoardScreen extends StatelessWidget {
               slivers: [
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         InkWell(
                           onTap: () => Navigator.pop(context),
                           borderRadius: BorderRadius.circular(10),
-                          child: const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 4, horizontal: 2),
-                            child: Row(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.06),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                            ),
+                            child: const Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(Icons.arrow_back_rounded, size: 16, color: UbColors.textMuted),
-                                SizedBox(width: 6),
-                                Text('Beranda', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: UbColors.textMuted)),
+                                Icon(Icons.arrow_back_rounded, size: 16, color: Colors.white),
+                                SizedBox(width: 5),
+                                Text('Beranda', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white)),
                               ],
                             ),
                           ),
                         ),
-                        const SizedBox(height: 6),
-                        ShaderMask(
-                          shaderCallback: (bounds) => const LinearGradient(
-                            colors: [Colors.white, Color(0xFFE0F2FE), Color(0xFF7DD3FC)],
-                          ).createShader(bounds),
-                          child: const Text(
-                            'GL Management Board',
-                            style: TextStyle(
-                              fontSize: 28,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: -0.5,
-                              color: Colors.white,
-                            ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              ShaderMask(
+                                shaderCallback: (bounds) => const LinearGradient(
+                                  colors: [Colors.white, Color(0xFFE0F2FE), Color(0xFF7DD3FC)],
+                                ).createShader(bounds),
+                                child: const Text(
+                                  'GL Management Board',
+                                  style: TextStyle(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: -0.4,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                              const Text(
+                                'Underbody · pilih pilar dan jenis kertas KPI yang ingin ditampilkan',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(fontSize: 11.5, color: UbColors.textMuted),
+                              ),
+                            ],
                           ),
-                        ),
-                        const SizedBox(height: 4),
-                        const Text(
-                          'Underbody · pilih pilar dan jenis kertas KPI yang ingin ditampilkan',
-                          style: TextStyle(fontSize: 12.5, color: UbColors.textMuted),
                         ),
                       ],
                     ),
                   ),
                 ),
                 SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 18),
                   sliver: SliverGrid(
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: crossAxisCount,
-                      crossAxisSpacing: 14,
-                      mainAxisSpacing: 14,
-                      mainAxisExtent: 268,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 12,
+                      mainAxisExtent: 224,
                     ),
                     delegate: SliverChildBuilderDelegate(
                       (context, index) {
@@ -140,54 +179,47 @@ class _DisplayPillarCard extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.045),
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
           Container(
-            height: 4,
+            height: 3.5,
             decoration: BoxDecoration(
               gradient: LinearGradient(colors: pillar.gradient),
             ),
           ),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.all(14),
+              padding: const EdgeInsets.all(11),
               child: Column(
                 children: [
                   Row(
                     children: [
                       Container(
-                        width: 42,
-                        height: 42,
+                        width: 36,
+                        height: 36,
                         decoration: BoxDecoration(
                           gradient: LinearGradient(
                             colors: pillar.gradient,
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                           ),
-                          borderRadius: BorderRadius.circular(14),
-                          boxShadow: [
-                            BoxShadow(
-                              color: pillar.gradient.first.withValues(alpha: 0.3),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
+                          borderRadius: BorderRadius.circular(11),
                         ),
                         alignment: Alignment.center,
                         child: Text(
                           pillar.chip,
                           style: const TextStyle(
-                            fontSize: 16,
+                            fontSize: 14,
                             fontWeight: FontWeight.w900,
                             color: Colors.white,
                           ),
                         ),
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 9),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -197,9 +229,9 @@ class _DisplayPillarCard extends StatelessWidget {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                fontSize: 16,
+                                fontSize: 14.5,
                                 fontWeight: FontWeight.w900,
-                                letterSpacing: 0.4,
+                                letterSpacing: 0.3,
                                 color: pillar.accentColor,
                               ),
                             ),
@@ -207,22 +239,22 @@ class _DisplayPillarCard extends StatelessWidget {
                               pillar.fullName,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 11, color: UbColors.textMuted),
+                              style: const TextStyle(fontSize: 10.5, color: UbColors.textMuted),
                             ),
                           ],
                         ),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                         decoration: BoxDecoration(
                           color: pillar.gradient.first.withValues(alpha: 0.16),
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(7),
                         ),
                         child: Text(
                           '$orderIndex',
                           style: TextStyle(
                             fontFamily: 'monospace',
-                            fontSize: 11,
+                            fontSize: 10.5,
                             fontWeight: FontWeight.w800,
                             color: pillar.accentColor,
                           ),
@@ -230,27 +262,27 @@ class _DisplayPillarCard extends StatelessWidget {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 9),
                   Expanded(
                     child: GridView.builder(
                       physics: const NeverScrollableScrollPhysics(),
                       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: 2,
-                        crossAxisSpacing: 8,
-                        mainAxisSpacing: 8,
-                        childAspectRatio: 1.72,
+                        crossAxisSpacing: 7,
+                        mainAxisSpacing: 7,
+                        childAspectRatio: 1.75,
                       ),
                       itemCount: HubCatalog.displayRows.length,
                       itemBuilder: (context, idx) {
                         final row = HubCatalog.displayRows[idx];
                         return InkWell(
                           onTap: () => onSelectRow(row),
-                          borderRadius: BorderRadius.circular(14),
+                          borderRadius: BorderRadius.circular(12),
                           child: Container(
-                            padding: const EdgeInsets.all(10),
+                            padding: const EdgeInsets.all(8),
                             decoration: BoxDecoration(
                               color: UbColors.surface.withValues(alpha: 0.72),
-                              borderRadius: BorderRadius.circular(14),
+                              borderRadius: BorderRadius.circular(12),
                               border: Border.all(color: Colors.white.withValues(alpha: 0.09)),
                             ),
                             child: Column(
@@ -261,33 +293,22 @@ class _DisplayPillarCard extends StatelessWidget {
                                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
                                     Container(
-                                      width: 28,
-                                      height: 28,
+                                      width: 24,
+                                      height: 24,
                                       decoration: BoxDecoration(
                                         gradient: LinearGradient(colors: pillar.gradient),
-                                        borderRadius: BorderRadius.circular(9),
+                                        borderRadius: BorderRadius.circular(7),
                                       ),
-                                      child: Icon(row.icon, size: 15, color: Colors.white),
+                                      child: Icon(row.icon, size: 13, color: Colors.white),
                                     ),
-                                    const Icon(Icons.north_east_rounded, size: 14, color: UbColors.textMuted),
+                                    const Icon(Icons.north_east_rounded, size: 13, color: UbColors.textMuted),
                                   ],
                                 ),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      row.name,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Colors.white),
-                                    ),
-                                    Text(
-                                      row.desc,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(fontSize: 9.5, color: UbColors.textMuted),
-                                    ),
-                                  ],
+                                Text(
+                                  row.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Colors.white),
                                 ),
                               ],
                             ),

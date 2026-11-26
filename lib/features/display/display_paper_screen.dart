@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/theme.dart';
 import '../../data/hub_catalog.dart';
@@ -42,6 +45,10 @@ class _DisplayPaperScreenState extends State<DisplayPaperScreen> {
   bool _fullscreen = false;
   bool _loading = true;
   bool _liveSynced = false;
+  static const String _kPapersCacheKey = 'ubf_display_papers_cache_v1';
+  Map<String, Map<String, dynamic>> _papersMap = const {};
+
+  Map<String, dynamic>? get _activePocket => _papersMap['${_pillar.slug}-$_rowKey'];
 
   // Main KPI 12-month series (Apr..Mar)
   List<double?> _fyRed = List<double?>.filled(12, null);
@@ -116,6 +123,77 @@ class _DisplayPaperScreenState extends State<DisplayPaperScreen> {
     final kaizens = <({String no, String theme, String before, String after, String pic, String status})>[];
     var comment = '${_pillar.fullName} · ${meta.targetLabel}';
     var synced = false;
+
+    // 0. Sync 1:1 Next.js `/api/papers` (Atlas MongoDB) + local cache fallback
+    if (_papersMap.isEmpty) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final cachedRaw = prefs.getString(_kPapersCacheKey);
+        if (cachedRaw != null && cachedRaw.isNotEmpty) {
+          final dec = jsonDecode(cachedRaw);
+          if (dec is Map) {
+            final map = <String, Map<String, dynamic>>{};
+            dec.forEach((k, v) {
+              if (v is Map) map['$k'] = Map<String, dynamic>.from(v);
+            });
+            if (map.isNotEmpty) _papersMap = map;
+          }
+        }
+      } catch (_) {}
+    }
+
+    final papersRes = await UbWebApi.instance.getJson('/api/papers');
+    if (papersRes.ok && papersRes.map['data'] is Map) {
+      final rawMap = papersRes.map['data'] as Map;
+      final parsed = <String, Map<String, dynamic>>{};
+      rawMap.forEach((k, v) {
+        if (v is Map) parsed['$k'] = Map<String, dynamic>.from(v);
+      });
+      if (parsed.isNotEmpty) {
+        _papersMap = parsed;
+        if (papersRes.map['source'] == 'atlas') synced = true;
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString(_kPapersCacheKey, jsonEncode(parsed));
+        } catch (_) {}
+      }
+    }
+
+    // Apply active paper `series` & `comment` from Next.js `/api/papers`
+    final activeMainPocket = _papersMap['$slug-main'];
+    final activeRowPocket = _papersMap['$slug-$_rowKey'];
+    if (activeMainPocket != null && activeMainPocket['series'] is Map) {
+      final ser = Map<String, dynamic>.from(activeMainPocket['series'] as Map);
+      if (ser['target'] is num) fyTarget = (ser['target'] as num).toDouble();
+      if (ser['lower'] is bool) higherIsBetter = !(ser['lower'] as bool);
+      if (ser['red'] is List) {
+        final rl = ser['red'] as List;
+        fyRed = List<double?>.generate(12, (i) => i < rl.length && rl[i] is num ? (rl[i] as num).toDouble() : null);
+      }
+      if (ser['white'] is List) {
+        final wl = ser['white'] as List;
+        fyWhite = List<double?>.generate(12, (i) => i < wl.length && wl[i] is num ? (wl[i] as num).toDouble() : null);
+      }
+    }
+    if (activeRowPocket != null) {
+      final cmt = (activeRowPocket['comment'] ?? '').toString().trim();
+      if (cmt.isNotEmpty) comment = cmt;
+      if (activeRowPocket['items'] is List) {
+        final items = activeRowPocket['items'] as List;
+        for (var i = 0; i < items.length; i++) {
+          final it = items[i];
+          if (it is List && it.isNotEmpty) {
+            final no = it.isNotEmpty ? '${it[0]}' : '${i + 1}';
+            final prob = it.length > 1 ? '${it[1]}' : '';
+            final cm = it.length > 2 ? '${it[2]}' : '';
+            final pic = it.length > 3 ? '${it[3]}' : '';
+            final due = it.length > 4 ? '${it[4]}' : '';
+            final st = it.length > 5 ? '${it[5]}' : 'OPEN';
+            kaizens.add((no: no, theme: prob, before: due, after: cm, pic: pic, status: st));
+          }
+        }
+      }
+    }
 
     // 1. Try Next.js FY API when relevant
     if (slug == 'productivity') {
@@ -484,7 +562,12 @@ class _DisplayPaperScreenState extends State<DisplayPaperScreen> {
                               child: InkWell(
                                 onTap: () {
                                   if (r.key == _rowKey) return;
-                                  setState(() => _rowKey = r.key);
+                                  final nextPocket = _papersMap['${_pillar.slug}-${r.key}'];
+                                  final nextComment = (nextPocket?['comment'] ?? '').toString().trim();
+                                  setState(() {
+                                    _rowKey = r.key;
+                                    if (nextComment.isNotEmpty) _comment = nextComment;
+                                  });
                                 },
                                 borderRadius: BorderRadius.circular(8),
                                 child: Container(
@@ -622,19 +705,19 @@ class _DisplayPaperScreenState extends State<DisplayPaperScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 1. OFFICIAL TOYOTA GL MANAGEMENT BOARD HEADER (border-b-4 border-yellow-400)
+          // 1. 1:1 Next.js PaperFrame.tsx HEADER (Blue=Main, Yellow=Sub, Slate=Proses, Orange=Kaizen)
           Container(
             padding: const EdgeInsets.only(bottom: 10),
-            decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: Color(0xFFFACC15), width: 4)),
+            decoration: BoxDecoration(
+              border: Border(bottom: BorderSide(color: _rowThemeBg(_rowKey), width: 4)),
             ),
             child: Row(
               children: [
                 const Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('PT. TOYOTA MOTOR MFG · UNDERBODY', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF475569))),
-                    Text('GL MANAGEMENT BOARD', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF64748B))),
+                    Text('PT. TMMIN · UNDERBODY ASSY', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
+                    Text('GL MANAGEMENT BOARD', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFF64748B))),
                   ],
                 ),
                 const SizedBox(width: 14),
@@ -642,15 +725,15 @@ class _DisplayPaperScreenState extends State<DisplayPaperScreen> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFDE047),
-                      border: Border.all(color: Colors.black87, width: 1.5),
+                      color: _rowThemeBg(_rowKey),
+                      borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
-                      meta.bannerTitle,
+                      _resolvedPaperTitle(meta),
                       textAlign: TextAlign.center,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: Color(0xFF0F172A), letterSpacing: 0.4),
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: _rowThemeFg(_rowKey), letterSpacing: 0.4),
                     ),
                   ),
                 ),
@@ -691,15 +774,9 @@ class _DisplayPaperScreenState extends State<DisplayPaperScreen> {
           ),
           const SizedBox(height: 12),
 
-          // 2. BODY CONTENT (EXPENDS TO FILL A3 SHEET)
+          // 2. BODY CONTENT (1:1 Next.js Atlas Paper Templates + Live Store Fallback)
           Expanded(
-            child: switch (_rowKey) {
-              'main' => _buildMainKpiA3(meta),
-              'sub' => _buildSubKpiA3(meta),
-              'proses' => _buildProsesKpiA3(),
-              'kaizen' => _buildKaizenA3(),
-              _ => _buildMainKpiA3(meta),
-            },
+            child: _buildPaperBody(meta),
           ),
           const SizedBox(height: 10),
 
@@ -726,6 +803,666 @@ class _DisplayPaperScreenState extends State<DisplayPaperScreen> {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Color _rowThemeBg(String rowKey) => switch (rowKey) {
+        'main' => const Color(0xFF2563EB),
+        'sub' => const Color(0xFFFDE047),
+        'proses' => const Color(0xFF64748B),
+        'kaizen' => const Color(0xFFF97316),
+        _ => const Color(0xFF2563EB),
+      };
+
+  Color _rowThemeFg(String rowKey) =>
+      rowKey == 'sub' ? const Color(0xFF0F172A) : Colors.white;
+
+  String _resolvedPaperTitle(DisplayPaperMeta meta) {
+    final pocket = _activePocket;
+    final pTitle = (pocket?['title'] ?? '').toString().trim();
+    if (_rowKey == 'kaizen') return 'KAIZEN REPORT · ${_pillar.shortName}';
+    final rowName = switch (_rowKey) {
+      'main' => 'MAIN KPI',
+      'sub' => 'SUB KPI',
+      'proses' => 'PROSES KPI',
+      _ => _rowKey.toUpperCase(),
+    };
+    if (pTitle.isNotEmpty) return '$rowName · ${pTitle.toUpperCase()}';
+    return meta.bannerTitle;
+  }
+
+  Widget _buildPaperBody(DisplayPaperMeta meta) {
+    final pocket = _activePocket;
+    if (pocket != null) {
+      if (pocket['hoshin'] is Map) {
+        return _buildHoshinMainA3(Map<String, dynamic>.from(pocket['hoshin'] as Map));
+      }
+      if (pocket['actionPlan'] is Map) {
+        return _buildActionPlanA3(Map<String, dynamic>.from(pocket['actionPlan'] as Map));
+      }
+      if (pocket['kpiTree'] is Map) {
+        return _buildKpiTreeA3(Map<String, dynamic>.from(pocket['kpiTree'] as Map));
+      }
+      if (pocket['strategyBoard'] is Map) {
+        return _buildStrategyBoardA3(Map<String, dynamic>.from(pocket['strategyBoard'] as Map));
+      }
+      if (_rowKey == 'proses' && pocket['problemList'] is Map) {
+        final pl = Map<String, dynamic>.from(pocket['problemList'] as Map);
+        if (pl['rows'] is List && (pl['rows'] as List).isNotEmpty) {
+          return _buildProblemListA3(pl);
+        }
+      }
+      if (_rowKey == 'proses' && pocket['causes'] is List && (pocket['causes'] as List).isNotEmpty && _prosesRows.isEmpty) {
+        return _buildCausesParetoA3(
+          (pocket['causes'] as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList(),
+          (pocket['conclusion'] ?? '').toString(),
+        );
+      }
+      if (_rowKey == 'kaizen' && pocket['kaizenReports'] is List && (pocket['kaizenReports'] as List).isNotEmpty) {
+        return _buildKaizenReportsA3(
+          (pocket['kaizenReports'] as List).whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList(),
+        );
+      }
+    }
+
+    return switch (_rowKey) {
+      'main' => _buildMainKpiA3(meta),
+      'sub' => _buildSubKpiA3(meta),
+      'proses' => _buildProsesKpiA3(),
+      'kaizen' => _buildKaizenA3(),
+      _ => _buildMainKpiA3(meta),
+    };
+  }
+
+  /// 1:1 Next.js `hoshin-main.tsx`
+  Widget _buildHoshinMainA3(Map<String, dynamic> h) {
+    final reflections = (h['reflection'] is List ? h['reflection'] as List : const [])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+    final strategies = (h['strategy'] is List ? h['strategy'] as List : const [])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+    final kpis = (h['kpi'] is List ? h['kpi'] as List : const [])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Top Coy & Dir Hoshin Banner
+        Row(
+          children: [
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  border: Border.all(color: const Color(0xFF93C5FD), width: 1.5),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('COY HOSHIN', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Color(0xFF1D4ED8))),
+                    const SizedBox(height: 3),
+                    Text('${h['coy'] ?? '-'}', style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEFCE8),
+                  border: Border.all(color: const Color(0xFFFDE047), width: 1.5),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('DIR / DIV HOSHIN', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Color(0xFFA16207))),
+                    const SizedBox(height: 3),
+                    Text('${h['dir'] ?? '-'}', style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF0F172A))),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Reflection Column
+              Expanded(
+                flex: 3,
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    border: Border.all(color: const Color(0xFFCBD5E1), width: 1.5),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('REFLECTION', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFF334155))),
+                        const Divider(height: 10),
+                        for (final r in reflections) ...[
+                          Text('${r['title'] ?? ''}', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
+                          for (final line in (r['lines'] is List ? r['lines'] as List : const []))
+                            Padding(
+                              padding: const EdgeInsets.only(left: 6, top: 2),
+                              child: Text('• $line', style: const TextStyle(fontSize: 11, color: Color(0xFF334155))),
+                            ),
+                          const SizedBox(height: 6),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              // Strategy Column
+              Expanded(
+                flex: 4,
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: Border.all(color: const Color(0xFF2563EB), width: 1.5),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('STRATEGY FY26', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFF1D4ED8))),
+                        const Divider(height: 10),
+                        for (final s in strategies) ...[
+                          Text('${s['heading'] ?? ''}', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
+                          for (final it in (s['items'] is List ? s['items'] as List : const []))
+                            Padding(
+                              padding: const EdgeInsets.only(left: 6, top: 2),
+                              child: Text('→ $it', style: const TextStyle(fontSize: 11, color: Color(0xFF1E293B))),
+                            ),
+                          const SizedBox(height: 6),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              // KPI Column
+              Expanded(
+                flex: 3,
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF0FDF4),
+                    border: Border.all(color: const Color(0xFF16A34A), width: 1.5),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('KPI TARGET: ${h['kpiTarget'] ?? ''}', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900, color: Color(0xFF15803D))),
+                        const Divider(height: 10),
+                        for (final k in kpis) ...[
+                          Container(
+                            width: double.infinity,
+                            margin: const EdgeInsets.only(bottom: 6),
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: k['hl'] == true ? const Color(0xFFDCFCE7) : Colors.white,
+                              border: Border.all(color: const Color(0xFF86EFAC)),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text('${k['label'] ?? ''}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                                for (final ln in (k['lines'] is List ? k['lines'] as List : const []))
+                                  Text('• $ln', style: const TextStyle(fontSize: 10.5, color: Color(0xFF334155))),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 1:1 Next.js `hoshin-sub.tsx` (Department Action Plan)
+  Widget _buildActionPlanA3(Map<String, dynamic> ap) {
+    final rows = (ap['rows'] is List ? ap['rows'] as List : const [])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          color: const Color(0xFF1E293B),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${ap['title'] ?? 'DEPARTMENT ACTION PLAN'} (${ap['subtitle'] ?? ''})',
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Colors.white),
+                ),
+              ),
+              Text(
+                'Div: ${ap['divHead'] ?? '-'} · Dept: ${ap['deptHead'] ?? '-'}',
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFFFDE047)),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: SingleChildScrollView(
+            child: Table(
+              border: TableBorder.all(color: const Color(0xFFCBD5E1), width: 1),
+              columnWidths: const {
+                0: FixedColumnWidth(32),
+                1: FlexColumnWidth(1.2),
+                2: FlexColumnWidth(1.5),
+                3: FlexColumnWidth(1.1),
+                4: FlexColumnWidth(2.4),
+                5: FlexColumnWidth(1.7),
+                6: FixedColumnWidth(65),
+              },
+              children: [
+                const TableRow(
+                  decoration: BoxDecoration(color: Color(0xFFE2E8F0)),
+                  children: [
+                    Padding(padding: EdgeInsets.all(5), child: Text('NO', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Color(0xFF0F172A)))),
+                    Padding(padding: EdgeInsets.all(5), child: Text('KRA / OUTPUT', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Color(0xFF0F172A)))),
+                    Padding(padding: EdgeInsets.all(5), child: Text('KPI', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Color(0xFF0F172A)))),
+                    Padding(padding: EdgeInsets.all(5), child: Text('TARGET', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Color(0xFF0F172A)))),
+                    Padding(padding: EdgeInsets.all(5), child: Text('IMPROVEMENT & ACTIVITY', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Color(0xFF0F172A)))),
+                    Padding(padding: EdgeInsets.all(5), child: Text('SCHEDULE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Color(0xFF0F172A)))),
+                    Padding(padding: EdgeInsets.all(5), child: Text('PIC', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Color(0xFF0F172A)))),
+                  ],
+                ),
+                for (final r in rows)
+                  TableRow(
+                    children: [
+                      Padding(padding: const EdgeInsets.all(5), child: Text('${r['no'] ?? ''}', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)))),
+                      Padding(
+                        padding: const EdgeInsets.all(5),
+                        child: Text(
+                          '${r['kra'] ?? ''}${(r['output'] ?? '').toString().isNotEmpty ? '
+${r['output']}' : ''}'.trim(),
+                          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                        ),
+                      ),
+                      Padding(padding: const EdgeInsets.all(5), child: Text('${r['kpiName'] ?? ''}', style: const TextStyle(fontSize: 10, color: Color(0xFF1E293B)))),
+                      Padding(padding: const EdgeInsets.all(5), child: Text('${r['target'] ?? ''}', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF1D4ED8)))),
+                      Padding(
+                        padding: const EdgeInsets.all(5),
+                        child: Text(
+                          [
+                            ...(r['improvement'] is List ? (r['improvement'] as List).map((e) => '• $e') : const <String>[]),
+                            ...(r['activity'] is List ? (r['activity'] as List).map((e) => '↳ $e') : const <String>[]),
+                          ].join('
+'),
+                          style: const TextStyle(fontSize: 9.5, color: Color(0xFF334155)),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(5),
+                        child: Text(
+                          (r['schedule'] is List ? (r['schedule'] as List).join('
+') : ''),
+                          style: const TextStyle(fontSize: 9.5, color: Color(0xFF0F766E)),
+                        ),
+                      ),
+                      Padding(padding: const EdgeInsets.all(5), child: Text('${r['main'] ?? ''}', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)))),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 1:1 Next.js `hoshin-proses.tsx` (KPI Tree)
+  Widget _buildKpiTreeA3(Map<String, dynamic> kt) {
+    final rows = (kt['rows'] is List ? kt['rows'] as List : const [])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+
+    return SingleChildScrollView(
+      child: Table(
+        border: TableBorder.all(color: const Color(0xFF94A3B8), width: 1.2),
+        columnWidths: const {
+          0: FixedColumnWidth(130),
+          1: FlexColumnWidth(1.4),
+          2: FlexColumnWidth(1.8),
+          3: FlexColumnWidth(2.4),
+        },
+        children: [
+          const TableRow(
+            decoration: BoxDecoration(color: Color(0xFF0F172A)),
+            children: [
+              Padding(padding: EdgeInsets.all(8), child: Text('PILLAR', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Colors.white))),
+              Padding(padding: EdgeInsets.all(8), child: Text('MAIN KPI', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFF93C5FD)))),
+              Padding(padding: EdgeInsets.all(8), child: Text('SUB KPI', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFFFDE047)))),
+              Padding(padding: EdgeInsets.all(8), child: Text('PROCESS KPI', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Color(0xFF86EFAC)))),
+            ],
+          ),
+          for (final r in rows)
+            TableRow(
+              children: [
+                Container(
+                  color: const Color(0xFFF1F5F9),
+                  padding: const EdgeInsets.all(8),
+                  child: Text('${r['pillar'] ?? ''}', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Text('${r['main'] ?? ''}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF1D4ED8))),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if ((r['subHead'] ?? '').toString().isNotEmpty)
+                        Text('${r['subHead']}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Color(0xFF0F172A))),
+                      for (final s in (r['sub'] is List ? r['sub'] as List : const []))
+                        Text('• $s', style: const TextStyle(fontSize: 11.5, color: Color(0xFF1E293B))),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (final pr in (r['process'] is List ? r['process'] as List : const []))
+                        Text('• $pr', style: const TextStyle(fontSize: 11.5, color: Color(0xFF334155))),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 1:1 Next.js `hoshin-kaizen.tsx` (STRATEGY Board with [[highlight]])
+  Widget _buildStrategyBoardA3(Map<String, dynamic> sb) {
+    final groups = (sb['groups'] is List ? sb['groups'] as List : const [])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+
+    List<InlineSpan> parseHighlighted(String line) {
+      final spans = <InlineSpan>[];
+      final reg = RegExp(r'\[\[(.+?)\]\]');
+      var last = 0;
+      for (final m in reg.allMatches(line)) {
+        if (m.start > last) {
+          spans.add(TextSpan(text: line.substring(last, m.start)));
+        }
+        spans.add(
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(
+                color: const Color(0xFFBBF7D0),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                m.group(1) ?? '',
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Color(0xFF14532D)),
+              ),
+            ),
+          ),
+        );
+        last = m.end;
+      }
+      if (last < line.length) {
+        spans.add(TextSpan(text: line.substring(last)));
+      }
+      return spans;
+    }
+
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final g in groups)
+            Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                border: Border.all(color: const Color(0xFFCBD5E1), width: 1.5),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF16A34A),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '${g['letter'] ?? ''}',
+                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Colors.white),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        for (final ln in (g['lines'] is List ? g['lines'] as List : const []))
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Text.rich(
+                              TextSpan(
+                                style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                                children: [
+                                  const TextSpan(text: '~ '),
+                                  ...parseHighlighted('$ln'),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 1:1 Next.js `safety-proses.tsx` (`problemList`)
+  Widget _buildProblemListA3(Map<String, dynamic> pl) {
+    final rows = (pl['rows'] is List ? pl['rows'] as List : const [])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+    return SingleChildScrollView(
+      child: Table(
+        border: TableBorder.all(color: const Color(0xFFCBD5E1)),
+        columnWidths: const {
+          0: FixedColumnWidth(36),
+          1: FixedColumnWidth(95),
+          2: FlexColumnWidth(2.2),
+          3: FlexColumnWidth(1.8),
+          4: FixedColumnWidth(90),
+          5: FixedColumnWidth(80),
+        },
+        children: [
+          const TableRow(
+            decoration: BoxDecoration(color: Color(0xFF1E293B)),
+            children: [
+              Padding(padding: EdgeInsets.all(6), child: Text('NO', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: Colors.white))),
+              Padding(padding: EdgeInsets.all(6), child: Text('PROSES', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: Colors.white))),
+              Padding(padding: EdgeInsets.all(6), child: Text('TEMUAN / DESCRIPTION', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: Colors.white))),
+              Padding(padding: EdgeInsets.all(6), child: Text('COUNTERMEASURE', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: Colors.white))),
+              Padding(padding: EdgeInsets.all(6), child: Text('PIC / TGL', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: Colors.white))),
+              Padding(padding: EdgeInsets.all(6), child: Text('RANK', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: Colors.white))),
+            ],
+          ),
+          for (final r in rows)
+            TableRow(
+              children: [
+                Padding(padding: const EdgeInsets.all(6), child: Text('${r['no'] ?? ''}', style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)))),
+                Padding(padding: const EdgeInsets.all(6), child: Text('${r['process'] ?? r['location'] ?? ''}', style: const TextStyle(fontSize: 10.5, color: Color(0xFF334155)))),
+                Padding(padding: const EdgeInsets.all(6), child: Text('${r['description'] ?? ''}', style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF0F172A)))),
+                Padding(padding: const EdgeInsets.all(6), child: Text('${r['cmDescription'] ?? ''}', style: const TextStyle(fontSize: 10.5, color: Color(0xFF0F766E)))),
+                Padding(padding: const EdgeInsets.all(6), child: Text('${r['pic'] ?? ''}
+${r['date'] ?? ''}'.trim(), style: const TextStyle(fontSize: 10, color: Color(0xFF475569)))),
+                Padding(
+                  padding: const EdgeInsets.all(6),
+                  child: Text(
+                    '${(r['before'] is Map ? (r['before'] as Map)['rank'] : '') ?? ''} → ${(r['after'] is Map ? (r['after'] as Map)['rank'] : '') ?? ''}',
+                    style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: Color(0xFFDC2626)),
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 1:1 Next.js Pareto `causes` + `conclusion`
+  Widget _buildCausesParetoA3(List<Map<String, dynamic>> causes, String conclusion) {
+    final maxV = causes.fold<double>(1, (m, e) {
+      final v = (e['v'] as num?)?.toDouble() ?? 0;
+      return v > m ? v : m;
+    });
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: SingleChildScrollView(
+            child: Column(
+              children: [
+                for (final c in causes)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 240,
+                          child: Text('${c['n'] ?? ''}', style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
+                        ),
+                        Expanded(
+                          child: FractionallySizedBox(
+                            alignment: Alignment.centerLeft,
+                            widthFactor: (((c['v'] as num?)?.toDouble() ?? 0) / maxV).clamp(0.05, 1.0),
+                            child: Container(
+                              height: 26,
+                              alignment: Alignment.centerRight,
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF2563EB),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text('${c['v'] ?? 0}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Colors.white)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        if (conclusion.isNotEmpty)
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFEF9C3),
+              border: Border.all(color: const Color(0xFFFACC15), width: 1.5),
+            ),
+            child: Text('KESIMPULAN: $conclusion', style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
+          ),
+      ],
+    );
+  }
+
+  /// 1:1 Next.js `kaizen-report.tsx` (`kaizenReports`)
+  Widget _buildKaizenReportsA3(List<Map<String, dynamic>> reports) {
+    return SingleChildScrollView(
+      child: Table(
+        border: TableBorder.all(color: const Color(0xFFCBD5E1)),
+        columnWidths: const {
+          0: FixedColumnWidth(36),
+          1: FlexColumnWidth(2.2),
+          2: FlexColumnWidth(1.2),
+          3: FlexColumnWidth(1.5),
+          4: FlexColumnWidth(1.5),
+          5: FixedColumnWidth(90),
+          6: FixedColumnWidth(80),
+        },
+        children: [
+          const TableRow(
+            decoration: BoxDecoration(color: Color(0xFFEA580C)),
+            children: [
+              Padding(padding: EdgeInsets.all(6), child: Text('NO', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: Colors.white))),
+              Padding(padding: EdgeInsets.all(6), child: Text('THEMA KAIZEN', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: Colors.white))),
+              Padding(padding: EdgeInsets.all(6), child: Text('LINE / PROSES', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: Colors.white))),
+              Padding(padding: EdgeInsets.all(6), child: Text('BEFORE → AFTER', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: Colors.white))),
+              Padding(padding: EdgeInsets.all(6), child: Text('RESULT', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: Colors.white))),
+              Padding(padding: EdgeInsets.all(6), child: Text('PIC / BLN', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: Colors.white))),
+              Padding(padding: EdgeInsets.all(6), child: Text('STATUS', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: Colors.white))),
+            ],
+          ),
+          for (var i = 0; i < reports.length; i++)
+            TableRow(
+              children: [
+                Padding(padding: const EdgeInsets.all(6), child: Text('${i + 1}', style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)))),
+                Padding(padding: const EdgeInsets.all(6), child: Text('${reports[i]['theme'] ?? ''}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)))),
+                Padding(padding: const EdgeInsets.all(6), child: Text('${reports[i]['line'] ?? ''} · ${reports[i]['process'] ?? ''}', style: const TextStyle(fontSize: 10.5, color: Color(0xFF334155)))),
+                Padding(padding: const EdgeInsets.all(6), child: Text('${reports[i]['beforeValue'] ?? '-'} → ${reports[i]['afterValue'] ?? '-'}', style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF1D4ED8)))),
+                Padding(padding: const EdgeInsets.all(6), child: Text('${reports[i]['result'] ?? ''}', style: const TextStyle(fontSize: 10.5, color: Color(0xFF0F766E)))),
+                Padding(padding: const EdgeInsets.all(6), child: Text('${reports[i]['pic'] ?? ''}
+${reports[i]['month'] ?? ''}'.trim(), style: const TextStyle(fontSize: 10, color: Color(0xFF475569)))),
+                Padding(padding: const EdgeInsets.all(6), child: Text('${reports[i]['status'] ?? ''}'.toUpperCase(), style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Color(0xFF16A34A)))),
+              ],
+            ),
         ],
       ),
     );
