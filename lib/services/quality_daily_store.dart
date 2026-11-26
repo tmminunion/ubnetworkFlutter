@@ -1,10 +1,8 @@
 import 'dart:convert';
 
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/quality_daily_models.dart';
-import 'local_store.dart';
 import 'ub_web_api.dart';
 
 class QualityDailyStore {
@@ -122,34 +120,27 @@ class QualityDailyStore {
   }
 
   Future<MonthlyProdData?> fetchMonthlyProd(String ym) async {
-    final cfg = await LocalStore.instance.getSettings();
-    final base = cfg.serverApiUrl.split('?').first.trim();
-    if (base.isEmpty) return null;
-
     final parts = ym.split('-');
     if (parts.length < 2) return null;
-    try {
-      final uri = Uri.parse('$base?action=get_monthly_monitoring&year=${parts[0]}&month=${parts[1]}');
-      final res = await http.get(uri, headers: const {'Accept': 'application/json'}).timeout(const Duration(seconds: 10));
-      if (res.statusCode < 200 || res.statusCode >= 300) return null;
-      final json = jsonDecode(res.body);
-      if (json is! Map || json['status'] != 'success' || json['days'] is! List) return null;
-      final days = json['days'] as List;
+    final res = await UbWebApi.instance.getUb({
+      'action': 'get_monthly_monitoring',
+      'year': parts[0],
+      'month': parts[1],
+    });
+    if (!res.ok || res.map['status'] != 'success' || res.map['days'] is! List) return null;
+    final days = res.map['days'] as List;
 
-      int? parseAct(dynamic raw) {
-        if (raw is! Map) return null;
-        if (raw['isSaved'] != true) return null;
-        final a = raw['act'];
-        return a is num ? a.toInt() : (int.tryParse('${a ?? 0}') ?? 0);
-      }
-
-      return MonthlyProdData(
-        red: days.map((d) => d is Map ? parseAct(d['red']) : null).toList(),
-        white: days.map((d) => d is Map ? parseAct(d['white']) : null).toList(),
-        weekend: days.map((d) => d is Map && d['isWeekend'] == true).toList(),
-      );
-    } catch (_) {
-      return null;
+    int? parseAct(dynamic raw) {
+      if (raw is! Map) return null;
+      if (raw['isSaved'] != true) return null;
+      final a = raw['act'];
+      return a is num ? a.toInt() : (int.tryParse('${a ?? 0}') ?? 0);
     }
+
+    return MonthlyProdData(
+      red: days.map((d) => d is Map ? parseAct(d['red']) : null).toList(),
+      white: days.map((d) => d is Map ? parseAct(d['white']) : null).toList(),
+      weekend: days.map((d) => d is Map && d['isWeekend'] == true).toList(),
+    );
   }
 }

@@ -1,11 +1,11 @@
 import 'dart:convert';
 
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/checksheet_models.dart';
 import '../models/roster_attendance_models.dart';
 import 'local_store.dart';
+import 'ub_web_api.dart';
 
 class RosterAttendanceStore {
   RosterAttendanceStore._();
@@ -14,27 +14,20 @@ class RosterAttendanceStore {
   static String _rosterKey(String shift) => 'ubf_roster_v1_$shift';
 
   Future<({List<RosterMember> members, bool fromServer})> fetchRoster(String shift) async {
-    final cfg = await LocalStore.instance.getSettings();
-    final base = cfg.serverApiUrl.split('?').first.trim();
-
-    if (base.isNotEmpty) {
-      try {
-        final uri = Uri.parse('$base?action=get_members&shift=$shift&_t=${DateTime.now().millisecondsSinceEpoch}');
-        final res = await http.get(uri, headers: const {'Accept': 'application/json'}).timeout(const Duration(seconds: 12));
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          final json = jsonDecode(res.body);
-          if (json is Map && json['status'] == 'success' && json['data'] is List) {
-            final parsed = (json['data'] as List)
-                .whereType<Map>()
-                .map((m) => RosterMember.fromJson(Map<String, dynamic>.from(m)))
-                .toList();
-            if (parsed.isNotEmpty) {
-              await _saveRosterCache(shift, parsed);
-              return (members: parsed, fromServer: true);
-            }
-          }
-        }
-      } catch (_) {}
+    final res = await UbWebApi.instance.getUb({
+      'action': 'get_members',
+      'shift': shift,
+      '_t': '${DateTime.now().millisecondsSinceEpoch}',
+    });
+    if (res.ok && res.map['status'] == 'success' && res.map['data'] is List) {
+      final parsed = (res.map['data'] as List)
+          .whereType<Map>()
+          .map((m) => RosterMember.fromJson(Map<String, dynamic>.from(m)))
+          .toList();
+      if (parsed.isNotEmpty) {
+        await _saveRosterCache(shift, parsed);
+        return (members: parsed, fromServer: true);
+      }
     }
 
     final cached = await _loadRosterCache(shift);
@@ -59,7 +52,6 @@ class RosterAttendanceStore {
   }
 
   Future<({bool synced, String message})> saveMember(RosterMember m) async {
-    // 1. Offline-first update
     final current = await _loadRosterCache(m.shift);
     final list = List<RosterMember>.from(current);
     final idx = list.indexWhere((e) => e.id == m.id && m.id > 0);
@@ -86,32 +78,20 @@ class RosterAttendanceStore {
     }
     await _saveRosterCache(m.shift, list);
 
-    // 2. Push to MySQL bungtemin.net
-    final cfg = await LocalStore.instance.getSettings();
-    final base = cfg.serverApiUrl.split('?').first.trim();
-    if (base.isEmpty) return (synced: false, message: 'Tersimpan di lokal.');
-    try {
-      final payload = {
-        ...m.toJson(),
-        'line_name': 'UB Assy',
-      };
-      final res = await http
-          .post(
-            Uri.parse('$base?action=save_member'),
-            headers: const {'Content-Type': 'application/json', 'Accept': 'application/json'},
-            body: jsonEncode(payload),
-          )
-          .timeout(const Duration(seconds: 12));
-      if (res.statusCode >= 200 && res.statusCode < 300) {
-        final json = jsonDecode(res.body);
-        if (json is Map && json['status'] == 'success') {
-          return (synced: true, message: 'Anggota "${m.name}" tersimpan ke MySQL!');
-        }
-      }
-      return (synced: false, message: 'Tersimpan di lokal (MySQL HTTP ${res.statusCode}).');
-    } catch (_) {
-      return (synced: false, message: 'Tersimpan di lokal (offline).');
+    final payload = {
+      ...m.toJson(),
+      'line_name': 'UB Assy',
+    };
+    final res = await UbWebApi.instance.postUb('save_member', payload);
+    if (res.ok && res.map['status'] == 'success') {
+      return (synced: true, message: 'Anggota "${m.name}" tersimpan ke MySQL!');
     }
+    return (
+      synced: false,
+      message: res.statusCode > 0
+          ? 'Tersimpan di lokal (MySQL HTTP ${res.statusCode}).'
+          : 'Tersimpan di lokal (offline).',
+    );
   }
 
   Future<({bool synced, String message})> deleteMember(RosterMember m) async {
@@ -119,21 +99,11 @@ class RosterAttendanceStore {
     final list = current.where((e) => e.id != m.id).toList();
     await _saveRosterCache(m.shift, list);
 
-    final cfg = await LocalStore.instance.getSettings();
-    final base = cfg.serverApiUrl.split('?').first.trim();
-    if (base.isEmpty || m.id <= 0) return (synced: false, message: 'Dihapus dari lokal.');
-    try {
-      final res = await http
-          .post(
-            Uri.parse('$base?action=delete_member'),
-            headers: const {'Content-Type': 'application/json', 'Accept': 'application/json'},
-            body: jsonEncode({'id': m.id}),
-          )
-          .timeout(const Duration(seconds: 10));
-      if (res.statusCode >= 200 && res.statusCode < 300) {
-        return (synced: true, message: 'Anggota ${m.name} dihapus dari MySQL.');
-      }
-    } catch (_) {}
+    if (m.id <= 0) return (synced: false, message: 'Dihapus dari lokal.');
+    final res = await UbWebApi.instance.postUb('delete_member', {'id': m.id});
+    if (res.ok) {
+      return (synced: true, message: 'Anggota ${m.name} dihapus dari MySQL.');
+    }
     return (synced: false, message: 'Anggota ${m.name} dihapus dari lokal.');
   }
 
@@ -142,39 +112,35 @@ class RosterAttendanceStore {
     AttendanceSummaryKpi kpi,
     bool fromServer,
   })> fetchMonthlyAttendance(String ym, String shift) async {
-    final cfg = await LocalStore.instance.getSettings();
-    final base = cfg.serverApiUrl.split('?').first.trim();
-
-    if (base.isNotEmpty) {
-      try {
-        final uri = Uri.parse('$base?action=get_monthly_attendance&year_month=$ym&shift=$shift');
-        final res = await http.get(uri, headers: const {'Accept': 'application/json'}).timeout(const Duration(seconds: 12));
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          final json = jsonDecode(res.body);
-          if (json is Map && json['status'] == 'success' && json['members'] is List) {
-            final members = (json['members'] as List)
-                .whereType<Map>()
-                .map((m) => MemberAttendanceRow.fromJson(Map<String, dynamic>.from(m)))
-                .toList();
-            final rawKpi = json['kpi'] is Map ? Map<String, dynamic>.from(json['kpi'] as Map) : <String, dynamic>{};
-            int ai(dynamic v) => v is num ? v.toInt() : (int.tryParse('${v ?? 0}') ?? 0);
-            double ad(dynamic v) => v is num ? v.toDouble() : (double.tryParse('${v ?? 100}') ?? 100);
-            final kpi = AttendanceSummaryKpi(
-              avgAttendanceRate: ad(rawKpi['avgAttendanceRate']),
-              totalHadir: ai(rawKpi['totalHadir']),
-              totalSakit: ai(rawKpi['totalSakit']),
-              totalIzin: ai(rawKpi['totalIzin']),
-              totalCuti: ai(rawKpi['totalCuti']),
-              totalDinas: ai(rawKpi['totalDinas']),
-              totalAlpa: ai(rawKpi['totalAlpa']),
-              totalAbsent: ai(rawKpi['totalAbsent']),
-              perfectMembersCount: ai(rawKpi['perfectMembersCount']),
-              totalMembers: ai(rawKpi['totalMembers']),
-            );
-            return (members: members, kpi: kpi, fromServer: true);
-          }
-        }
-      } catch (_) {}
+    final parts = ym.split('-');
+    final res = await UbWebApi.instance.getUb({
+      'action': 'get_monthly_attendance',
+      'year_month': ym,
+      if (parts.length == 2) 'year': parts[0],
+      if (parts.length == 2) 'month': parts[1],
+      'shift': shift,
+    });
+    if (res.ok && res.map['status'] == 'success' && res.map['members'] is List) {
+      final members = (res.map['members'] as List)
+          .whereType<Map>()
+          .map((m) => MemberAttendanceRow.fromJson(Map<String, dynamic>.from(m)))
+          .toList();
+      final rawKpi = res.map['kpi'] is Map ? Map<String, dynamic>.from(res.map['kpi'] as Map) : <String, dynamic>{};
+      int ai(dynamic v) => v is num ? v.toInt() : (int.tryParse('${v ?? 0}') ?? 0);
+      double ad(dynamic v) => v is num ? v.toDouble() : (double.tryParse('${v ?? 100}') ?? 100);
+      final kpi = AttendanceSummaryKpi(
+        avgAttendanceRate: ad(rawKpi['avgAttendanceRate']),
+        totalHadir: ai(rawKpi['totalHadir']),
+        totalSakit: ai(rawKpi['totalSakit']),
+        totalIzin: ai(rawKpi['totalIzin']),
+        totalCuti: ai(rawKpi['totalCuti']),
+        totalDinas: ai(rawKpi['totalDinas']),
+        totalAlpa: ai(rawKpi['totalAlpa']),
+        totalAbsent: ai(rawKpi['totalAbsent']),
+        perfectMembersCount: ai(rawKpi['perfectMembersCount']),
+        totalMembers: ai(rawKpi['totalMembers']),
+      );
+      return (members: members, kpi: kpi, fromServer: true);
     }
 
     final localReports = await LocalStore.instance.listReports();

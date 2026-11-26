@@ -671,6 +671,7 @@ class ChecksheetModals {
   static Future<Map<String, dynamic>?> showHeaderModal(
     BuildContext context, {
     required ChecksheetReport report,
+    List<ShiftTemplate>? availableTemplates,
   }) async {
     var shift = report.shift;
     var session = report.session;
@@ -678,6 +679,9 @@ class ChecksheetModals {
     var templateCode = report.templateCode;
     var otHours = report.overtimeHours;
     var otAwal = report.otAwal;
+    final allTemplates = (availableTemplates != null && availableTemplates.isNotEmpty)
+        ? availableTemplates
+        : UbMasterData.masterTemplates;
     final lineCtrl = TextEditingController(text: report.lineName);
     final taktCtrl = TextEditingController(text: '${report.taktTime}');
     final picCtrl = TextEditingController(text: report.picName);
@@ -691,7 +695,7 @@ class ChecksheetModals {
         shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
         builder: (ctx) => StatefulBuilder(
           builder: (ctx, setM) {
-            final tpls = UbMasterData.masterTemplates.where((t) => t.category == workMode).toList();
+            final tpls = allTemplates.where((t) => t.category == workMode).toList();
             return Padding(
               padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.of(ctx).viewInsets.bottom + 16),
               child: SingleChildScrollView(
@@ -723,9 +727,11 @@ class ChecksheetModals {
                             selected: {session},
                             onSelectionChanged: (s) => setM(() {
                               session = s.first;
-                              templateCode = session == 'night'
-                                  ? (workMode == 'puasa' ? 'malam_puasa' : 'malam_normal')
-                                  : (workMode == 'puasa' ? 'pagi_puasa' : 'pagi_normal');
+                              templateCode = UbMasterData.defaultTemplateCode(
+                                report.tanggal,
+                                session: session,
+                                workMode: workMode,
+                              );
                             }),
                           ),
                         ),
@@ -740,9 +746,11 @@ class ChecksheetModals {
                       selected: {workMode},
                       onSelectionChanged: (s) => setM(() {
                         workMode = s.first;
-                        templateCode = session == 'night'
-                            ? (workMode == 'puasa' ? 'malam_puasa' : 'malam_normal')
-                            : (workMode == 'puasa' ? 'pagi_puasa' : 'pagi_normal');
+                        templateCode = UbMasterData.defaultTemplateCode(
+                          report.tanggal,
+                          session: session,
+                          workMode: workMode,
+                        );
                       }),
                     ),
                     const SizedBox(height: 8),

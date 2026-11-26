@@ -276,6 +276,7 @@ class TemplateSlotDef {
     required this.basePlan19,
     required this.basePlan16,
     this.isOvertime = false,
+    this.isActive = true,
   });
 
   final int slotNo;
@@ -284,6 +285,40 @@ class TemplateSlotDef {
   final int basePlan19;
   final int basePlan16;
   final bool isOvertime;
+  final bool isActive;
+
+  factory TemplateSlotDef.fromJson(Map<String, dynamic> j) {
+    final start = (j['start_time'] ?? j['startTime'] ?? '').toString().trim();
+    final end = (j['end_time'] ?? j['endTime'] ?? '').toString().trim();
+    final rawRange = (j['time_range'] ?? j['timeRange'] ?? '').toString().trim();
+    final resolvedRange = rawRange.isNotEmpty
+        ? rawRange
+        : (start.isNotEmpty && end.isNotEmpty ? '$start - $end' : '');
+    final activeRaw = j['is_active'] ?? j['isActive'];
+    final active = activeRaw == null
+        ? true
+        : (activeRaw != false && activeRaw != 0 && '$activeRaw' != '0');
+    final otRaw = j['is_overtime'] ?? j['isOvertime'];
+    return TemplateSlotDef(
+      slotNo: (j['slot_no'] ?? j['slotNo'] as num?)?.toInt() ?? 1,
+      timeRange: resolvedRange,
+      durationMin: (j['duration_min'] ?? j['durationMin'] as num?)?.toInt() ?? 60,
+      basePlan19: (j['base_plan_19'] ?? j['basePlan19'] as num?)?.toInt() ?? 0,
+      basePlan16: (j['base_plan_16'] ?? j['basePlan16'] as num?)?.toInt() ?? 0,
+      isOvertime: otRaw == true || otRaw == 1 || '$otRaw' == '1',
+      isActive: active,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'slot_no': slotNo,
+        'time_range': timeRange,
+        'duration_min': durationMin,
+        'base_plan_19': basePlan19,
+        'base_plan_16': basePlan16,
+        'is_overtime': isOvertime,
+        'is_active': isActive,
+      };
 }
 
 class ShiftTemplate {
@@ -294,6 +329,7 @@ class ShiftTemplate {
     required this.category,
     required this.timeSession,
     required this.slots,
+    this.defaultTaktTime = 1.9,
   });
 
   final String code;
@@ -302,15 +338,48 @@ class ShiftTemplate {
   final String category; // normal | puasa
   final String timeSession; // day | night
   final List<TemplateSlotDef> slots;
+  final double defaultTaktTime;
+
+  factory ShiftTemplate.fromJson(Map<String, dynamic> j) {
+    final code = (j['code'] ?? 'pagi_normal').toString();
+    final rawCat = (j['category'] ?? (code.contains('puasa') ? 'puasa' : 'normal')).toString().toLowerCase();
+    final rawSess = (j['time_session'] ?? j['timeSession'] ?? (code.startsWith('malam') ? 'night' : 'day'))
+        .toString()
+        .toLowerCase();
+    final rawSlots = (j['slots'] as List?)
+            ?.whereType<Map>()
+            .map((e) => TemplateSlotDef.fromJson(Map<String, dynamic>.from(e)))
+            .toList() ??
+        const <TemplateSlotDef>[];
+    return ShiftTemplate(
+      code: code,
+      name: (j['name'] ?? code).toString(),
+      subtitle: (j['subtitle'] ?? j['description'] ?? '').toString(),
+      category: rawCat == 'puasa' ? 'puasa' : 'normal',
+      timeSession: rawSess == 'night' ? 'night' : 'day',
+      defaultTaktTime: (j['default_takt_time'] ?? j['defaultTaktTime'] as num?)?.toDouble() ?? 1.9,
+      slots: rawSlots,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'code': code,
+        'name': name,
+        'subtitle': subtitle,
+        'category': category,
+        'time_session': timeSession,
+        'default_takt_time': defaultTaktTime,
+        'slots': slots.map((s) => s.toJson()).toList(),
+      };
 }
 
 class UbSettings {
   UbSettings({
-    this.lineName = 'UB ASSY',
+    this.lineName = 'UB Assy',
     this.taktTime = 2.4,
     this.ccrTargetRed = 220,
     this.ccrTargetWhite = 220,
-    this.serverApiUrl = 'https://bungtemin.net/ub/api',
+    this.serverApiUrl = 'https://ubnetwork.vercel.app/api/ub',
     this.apiKey = '',
     this.sharepointSyncUrl = 'https://nudb.bungtemin.net/functions/ub_sp_sync',
     this.enableSharepointSync = true,
@@ -333,17 +402,26 @@ class UbSettings {
     return role == shift;
   }
 
-  factory UbSettings.fromJson(Map<String, dynamic> j) => UbSettings(
-        lineName: (j['lineName'] ?? 'UB ASSY').toString(),
-        taktTime: (j['taktTime'] as num?)?.toDouble() ?? 2.4,
-        ccrTargetRed: (j['ccrTargetRed'] as num?)?.toInt() ?? 220,
-        ccrTargetWhite: (j['ccrTargetWhite'] as num?)?.toInt() ?? 220,
-        serverApiUrl: (j['serverApiUrl'] ?? 'https://bungtemin.net/ub/api').toString(),
-        apiKey: (j['apiKey'] ?? '').toString(),
-        sharepointSyncUrl: (j['sharepointSyncUrl'] ?? 'https://nudb.bungtemin.net/functions/ub_sp_sync').toString(),
-        enableSharepointSync: j['enableSharepointSync'] != false,
-        role: (j['role'] ?? 'ADMIN').toString(),
-      );
+  factory UbSettings.fromJson(Map<String, dynamic> j) {
+    final rawKey = (j['apiKey'] ?? '').toString().trim();
+    var rawUrl = (j['serverApiUrl'] ?? 'https://ubnetwork.vercel.app/api/ub').toString().trim();
+    // Auto-migrate legacy direct URL (which fails 401 without server key) to authenticated Next.js /api/ub gateway
+    if (rawUrl.isEmpty || (rawUrl.contains('bungtemin.net/ub/api') && rawKey.isEmpty)) {
+      rawUrl = 'https://ubnetwork.vercel.app/api/ub';
+    }
+    final rawLine = (j['lineName'] ?? 'UB Assy').toString().trim();
+    return UbSettings(
+      lineName: (rawLine.isEmpty || rawLine == 'UB ASSY') ? 'UB Assy' : rawLine,
+      taktTime: (j['taktTime'] as num?)?.toDouble() ?? 2.4,
+      ccrTargetRed: (j['ccrTargetRed'] as num?)?.toInt() ?? 220,
+      ccrTargetWhite: (j['ccrTargetWhite'] as num?)?.toInt() ?? 220,
+      serverApiUrl: rawUrl,
+      apiKey: rawKey,
+      sharepointSyncUrl: (j['sharepointSyncUrl'] ?? 'https://nudb.bungtemin.net/functions/ub_sp_sync').toString(),
+      enableSharepointSync: j['enableSharepointSync'] != false,
+      role: (j['role'] ?? 'ADMIN').toString(),
+    );
+  }
 
   Map<String, dynamic> toJson() => {
         'lineName': lineName,
@@ -414,6 +492,19 @@ class ChecksheetReport {
   String syncStatus; // draft | synced | failed
   String updatedAt;
   String lastSyncedAt;
+
+  /// True jika user sudah menyentuh/mengisi data aktual pada checksheet (bukan template kosong murni).
+  bool get hasUserEdits {
+    for (final s in slots) {
+      if (s.act != null || s.problems.isNotEmpty || s.problem.trim().isNotEmpty) {
+        return true;
+      }
+    }
+    if (members.any((m) => m.status != 'Hadir' && m.status.isNotEmpty)) return true;
+    if (ckdParts.any((p) => p.qty > 0)) return true;
+    if (jamStopProduksi.trim().isNotEmpty) return true;
+    return false;
+  }
 
   factory ChecksheetReport.fromJson(Map<String, dynamic> j) {
     final sh = (j['shift'] ?? 'WHITE').toString().toUpperCase();
@@ -587,8 +678,47 @@ class UbMasterData {
   }
 
   static String makeReportId(String tanggal, String shift, String lineName) {
-    return '${tanggal}_${shift}_${lineName.isEmpty ? 'UB_ASSY' : lineName}'
+    final normLine = (lineName.trim().isEmpty ? 'UB_ASSY' : lineName.trim().toUpperCase())
         .replaceAll(RegExp(r'\s+'), '_');
+    return '${tanggal}_${shift.trim().toUpperCase()}_$normLine';
+  }
+
+  /// Menentukan kode template otomatis 1:1 Next.js berdasarkan tanggal (Sen-Kam vs Jumat), sesi (day/night), & mode kerja.
+  static String defaultTemplateCode(
+    String isoDate, {
+    String session = 'day',
+    String workMode = 'normal',
+  }) {
+    final isPuasa = workMode.toLowerCase() == 'puasa';
+    if (session.toLowerCase() == 'night') {
+      return isPuasa ? 'malam_puasa' : 'malam_normal';
+    }
+    final dt = DateTime.tryParse(isoDate);
+    final isFri = dt != null && dt.weekday == DateTime.friday;
+    if (isFri) {
+      return isPuasa ? 'jumat_puasa' : 'jumat_normal';
+    }
+    return isPuasa ? 'pagi_puasa' : 'pagi_normal';
+  }
+
+  /// Rotasi mingguan 1:1 Next.js (`app/api/ub/route.ts` anchor Senin 2026-09-07: genap WHITE=day/RED=night, ganjil RED=day/WHITE=night).
+  static String rotationSessionForShift(String isoDate, String shift) {
+    final parsed = DateTime.tryParse(isoDate);
+    if (parsed == null) return 'day';
+    final d = DateTime.utc(parsed.year, parsed.month, parsed.day);
+    final dow = d.weekday; // 1 = Mon .. 7 = Sun
+    final mondayOffset = dow == DateTime.sunday ? -6 : 1 - dow;
+    final currentMonday = d.add(Duration(days: mondayOffset));
+    final anchor = DateTime.utc(2026, 9, 7);
+    final diffDays = currentMonday.difference(anchor).inDays;
+    final diffWeeks = (diffDays / 7).floor();
+    final isAnchorEven = diffWeeks.abs() % 2 == 0;
+    final dayShift = isAnchorEven ? 'WHITE' : 'RED';
+    if (dow == DateTime.sunday) {
+      final nextWeekNight = isAnchorEven ? 'WHITE' : 'RED';
+      return shift.toUpperCase() == nextWeekNight ? 'night' : 'day';
+    }
+    return shift.toUpperCase() == dayShift ? 'day' : 'night';
   }
 
   static String formatDDMMYYYY(String isoDate) {
@@ -616,9 +746,9 @@ class UbMasterData {
   }
 
   static List<CbuModelItem> defaultCbuModels() => [
-        CbuModelItem(code: 'zenix', name: 'INNOVA ZENIX', qty: 0, ratio: 0.551),
-        CbuModelItem(code: 'fortuner', name: 'FORTUNER', qty: 0, ratio: 0.401),
-        CbuModelItem(code: 'innova', name: 'KIJANG INNOVA', qty: 0, ratio: 0.048),
+        CbuModelItem(code: 'zenix', name: 'ZENIX (HEV/GAS)', qty: 0, ratio: 1.0),
+        CbuModelItem(code: 'fortuner', name: 'FORTUNER (SUV)', qty: 0, ratio: 0.6),
+        CbuModelItem(code: 'innova', name: 'INNOVA (KIJANG)', qty: 0, ratio: 0.1),
       ];
 
   static List<CkdPartItem> defaultCkdParts() => [
@@ -834,10 +964,89 @@ class UbMasterData {
     ),
   ];
 
-  static ShiftTemplate getTemplate(String code) {
+  static ShiftTemplate getTemplate(
+    String code, {
+    List<ShiftTemplate>? customTemplates,
+  }) {
+    if (customTemplates != null && customTemplates.isNotEmpty) {
+      final hit = customTemplates.where((t) => t.code == code);
+      if (hit.isNotEmpty && hit.first.slots.isNotEmpty) {
+        return hit.first;
+      }
+    }
     return masterTemplates.firstWhere(
       (t) => t.code == code,
       orElse: () => masterTemplates.first,
+    );
+  }
+
+  /// Membuat draft Checksheet baru 1:1 sesuai Template Harian (instan untuk render frame pertama / saat belum ada data server).
+  static ChecksheetReport createTemplateReport({
+    required String date,
+    required String shift,
+    required UbSettings cfg,
+    String? sessionOverride,
+    String workMode = 'normal',
+    String? templateOverride,
+    int overtimeHours = 2,
+    String otAwal = 'none',
+    String? picOverride,
+    String? spvOverride,
+    int? ccrOverride,
+    ({String finish, String label})? prevCarry,
+    List<CbuModelItem>? customCbuModels,
+    List<CkdPartItem>? customCkdParts,
+    List<MemberAbsen>? customMembers,
+    List<ShiftTemplate>? customTemplates,
+  }) {
+    final normShift = shift.toUpperCase() == 'RED' ? 'RED' : 'WHITE';
+    final sess = sessionOverride ??
+        (templateOverride != null && templateOverride.toLowerCase().contains('malam')
+            ? 'night'
+            : 'day');
+    final tpl = templateOverride ?? defaultTemplateCode(date, session: sess, workMode: workMode);
+    final resolvedSession = tpl.toLowerCase().contains('malam') ? 'night' : sess;
+    final resolvedMode = tpl.toLowerCase().contains('puasa') ? 'puasa' : workMode;
+    final defCcr = ccrOverride ?? (normShift == 'RED' ? cfg.ccrTargetRed : cfg.ccrTargetWhite);
+    final autoStart = prevCarry != null ? addNumberPreservePad(prevCarry.finish, 1) : '';
+    final autoFin = (autoStart.isNotEmpty && defCcr > 0)
+        ? addNumberPreservePad(autoStart, defCcr - 1)
+        : '';
+
+    return ChecksheetReport(
+      id: makeReportId(date, normShift, cfg.lineName),
+      tanggal: date,
+      shift: normShift,
+      session: resolvedSession,
+      workMode: resolvedMode,
+      templateCode: tpl,
+      overtimeHours: overtimeHours,
+      otAwal: otAwal,
+      lineName: cfg.lineName.isEmpty ? 'UB Assy' : cfg.lineName,
+      taktTime: cfg.taktTime,
+      ccrPlan: defCcr,
+      picName: picOverride ?? (normShift == 'RED' ? 'KAMALUDIN' : 'DWI MULYONO'),
+      spvName: spvOverride ??
+          (normShift == 'RED' ? 'MASRURI / TRI RUSTIANTORO' : 'DADANG SURYADI / NUNU FATULAH'),
+      noBodyStart: autoStart,
+      noBodyFinish: autoFin,
+      cbuModels: (customCbuModels != null && customCbuModels.isNotEmpty)
+          ? customCbuModels.map((m) => CbuModelItem(code: m.code, name: m.name, qty: 0, ratio: m.ratio)).toList()
+          : defaultCbuModels(),
+      ckdParts: (customCkdParts != null && customCkdParts.isNotEmpty)
+          ? customCkdParts.map((p) => CkdPartItem(partNo: p.partNo, partName: p.partName, qty: 0)).toList()
+          : defaultCkdParts(),
+      members: (customMembers != null && customMembers.isNotEmpty)
+          ? customMembers.map((m) => m.copy()..status = 'Hadir').toList()
+          : defaultMembers(normShift),
+      slots: buildSlotsFromTemplate(
+        tpl,
+        cfg.taktTime,
+        overtimeHours,
+        otAwalMode: otAwal,
+        customTemplates: customTemplates,
+      ),
+      syncStatus: 'draft',
     );
   }
 
@@ -847,8 +1056,9 @@ class UbMasterData {
     int otHours, {
     List<HourlySlot>? prevSlots,
     String otAwalMode = 'none',
+    List<ShiftTemplate>? customTemplates,
   }) {
-    final tmpl = getTemplate(tmplCode);
+    final tmpl = getTemplate(tmplCode, customTemplates: customTemplates);
     final isNight = tmplCode.startsWith('malam') || tmpl.timeSession == 'night';
     final isTt19 = (takt - 1.9).abs() < 0.05;
     final isTt16 = (takt - 1.6).abs() < 0.05;
@@ -898,7 +1108,9 @@ class UbMasterData {
       final isOt = sl.isOvertime || sl.slotNo >= 9;
       var isOtActive = true;
       if (isOt) {
-        final otIdx = sl.slotNo - 9;
+        final otSlots = tmpl.slots.where((s) => s.isOvertime || s.slotNo >= 9).toList();
+        var otIdx = otSlots.indexWhere((s) => s.slotNo == sl.slotNo);
+        if (otIdx < 0 && sl.slotNo >= 9) otIdx = sl.slotNo - 9;
         if (otIdx >= 0 && otHours <= otIdx) isOtActive = false;
       }
       var calcPlan = 0;
@@ -911,7 +1123,9 @@ class UbMasterData {
           calcPlan = (sl.durationMin / takt).round();
         }
       }
-      final blocked = isOt ? !isOtActive : (prev?.isBlocked ?? false);
+      final blocked = isOt
+          ? !isOtActive
+          : (!sl.isActive ? true : (prev?.isBlocked ?? false));
       out.add(HourlySlot(
         no: sl.slotNo,
         timeRange: sl.timeRange,

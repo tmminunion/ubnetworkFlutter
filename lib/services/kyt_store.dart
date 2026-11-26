@@ -1,10 +1,9 @@
 import 'dart:convert';
 
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/kyt_models.dart';
-import 'local_store.dart';
+import 'ub_web_api.dart';
 
 class KytStore {
   KytStore._();
@@ -13,28 +12,20 @@ class KytStore {
   static String _cacheKey(int year) => 'ubf_kyt_monitoring_v1_$year';
 
   Future<({List<SgaMonitoringRow> rows, bool fromServer})> fetchMonitoring(int year) async {
-    final cfg = await LocalStore.instance.getSettings();
-    final base = cfg.serverApiUrl.split('?').first.trim();
-
-    if (base.isNotEmpty) {
-      try {
-        final uri = Uri.parse('$base?action=get_kyt_monitoring&year=$year&shift=ALL&_t=${DateTime.now().millisecondsSinceEpoch}');
-        final res = await http.get(uri, headers: const {'Accept': 'application/json'}).timeout(const Duration(seconds: 12));
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          final json = jsonDecode(res.body);
-          if (json is Map && json['status'] == 'success' && json['data'] is List) {
-            final rows = (json['data'] as List)
-                .whereType<Map>()
-                .map((m) => SgaMonitoringRow.fromJson(Map<String, dynamic>.from(m)))
-                .toList();
-            if (rows.isNotEmpty) {
-              await _saveCache(year, rows);
-              return (rows: rows, fromServer: true);
-            }
-          }
-        }
-      } catch (_) {
-        // Fallback to local cache seamlessly
+    final res = await UbWebApi.instance.getUb({
+      'action': 'get_kyt_monitoring',
+      'year': '$year',
+      'shift': 'ALL',
+      '_t': '${DateTime.now().millisecondsSinceEpoch}',
+    });
+    if (res.ok && res.map['status'] == 'success' && res.map['data'] is List) {
+      final rows = (res.map['data'] as List)
+          .whereType<Map>()
+          .map((m) => SgaMonitoringRow.fromJson(Map<String, dynamic>.from(m)))
+          .toList();
+      if (rows.isNotEmpty) {
+        await _saveCache(year, rows);
+        return (rows: rows, fromServer: true);
       }
     }
 
@@ -53,7 +44,6 @@ class KytStore {
     required SgaMonitoringRow row,
     required MonthlyKytStatus updatedMonth,
   }) async {
-    // 1. Update local cache first (offline-first)
     final cached = await _loadCache(year);
     final rows = cached.isNotEmpty ? cached : KytMaster.defaultSeedRows();
     final rIdx = rows.indexWhere((r) => r.group.id == row.group.id);
@@ -62,58 +52,34 @@ class KytStore {
       await _saveCache(year, rows);
     }
 
-    // 2. Push to MySQL bungtemin.net
-    final cfg = await LocalStore.instance.getSettings();
-    final base = cfg.serverApiUrl.split('?').first.trim();
-    if (base.isEmpty) {
-      return (synced: false, message: 'Tersimpan di lokal (Server API kosong).');
+    final payload = {
+      'year': year,
+      'month': updatedMonth.monthNumber,
+      'sgaGroupId': int.tryParse(row.group.id) ?? 0,
+      'status': updatedMonth.status,
+      'tanggal': updatedMonth.tanggal,
+      'tema': updatedMonth.tema,
+      'tahap1': updatedMonth.tahap1,
+      'tahap2': updatedMonth.tahap2,
+      'tahap3': updatedMonth.tahap3,
+      'tahap4': updatedMonth.tahap4,
+      'ikrar': updatedMonth.ikrar,
+      'createdBy': updatedMonth.createdBy.isNotEmpty ? updatedMonth.createdBy : row.group.tlName,
+    };
+
+    final res = await UbWebApi.instance.postUb('save_kyt_status', payload);
+    if (res.ok && res.map['status'] == 'success') {
+      return (
+        synced: true,
+        message: 'KYT ${KytMaster.monthNames[updatedMonth.monthIdx]} $year tersimpan ke MySQL!',
+      );
     }
-
-    try {
-      final payload = {
-        'year': year,
-        'month': updatedMonth.monthNumber,
-        'sgaGroupId': int.tryParse(row.group.id) ?? 0,
-        'status': updatedMonth.status,
-        'tanggal': updatedMonth.tanggal,
-        'tema': updatedMonth.tema,
-        'tahap1': updatedMonth.tahap1,
-        'tahap2': updatedMonth.tahap2,
-        'tahap3': updatedMonth.tahap3,
-        'tahap4': updatedMonth.tahap4,
-        'ikrar': updatedMonth.ikrar,
-        'createdBy': updatedMonth.createdBy.isNotEmpty ? updatedMonth.createdBy : row.group.tlName,
-      };
-
-      final headers = <String, String>{
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      };
-      if (cfg.apiKey.trim().isNotEmpty) {
-        headers['x-ub-api-key'] = cfg.apiKey.trim();
-      }
-
-      final res = await http
-          .post(
-            Uri.parse('$base?action=save_kyt_status'),
-            headers: headers,
-            body: jsonEncode(payload),
-          )
-          .timeout(const Duration(seconds: 12));
-
-      if (res.statusCode >= 200 && res.statusCode < 300) {
-        final json = jsonDecode(res.body);
-        if (json is Map && json['status'] == 'success') {
-          return (
-            synced: true,
-            message: 'KYT ${KytMaster.monthNames[updatedMonth.monthIdx]} $year tersimpan ke MySQL!',
-          );
-        }
-      }
-      return (synced: false, message: 'Tersimpan di lokal (MySQL HTTP ${res.statusCode}).');
-    } catch (_) {
-      return (synced: false, message: 'Tersimpan di lokal (offline — sync saat online).');
-    }
+    return (
+      synced: false,
+      message: res.statusCode > 0
+          ? 'Tersimpan di lokal (MySQL HTTP ${res.statusCode}).'
+          : 'Tersimpan di lokal (offline — sync saat online).',
+    );
   }
 
   Future<List<SgaMonitoringRow>> _loadCache(int year) async {

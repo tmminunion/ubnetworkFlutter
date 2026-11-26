@@ -1,9 +1,6 @@
-import 'dart:convert';
-
-import 'package:http/http.dart' as http;
-
 import '../models/checksheet_models.dart';
 import 'local_store.dart';
+import 'ub_web_api.dart';
 
 class CbuCkdStore {
   CbuCkdStore._();
@@ -15,50 +12,42 @@ class CbuCkdStore {
     List<Map<String, dynamic>> reports,
     bool fromServer,
   })> fetchMonthlyBundle(String ym) async {
-    final cfg = await LocalStore.instance.getSettings();
-    final base = cfg.serverApiUrl.split('?').first.trim();
-
     var models = UbMasterData.defaultCbuModels();
     var ckdParts = UbMasterData.defaultCkdParts();
 
-    if (base.isNotEmpty) {
-      try {
-        final setRes = await http
-            .get(Uri.parse('$base?action=get_settings'), headers: const {'Accept': 'application/json'})
-            .timeout(const Duration(seconds: 10));
-        if (setRes.statusCode >= 200 && setRes.statusCode < 300) {
-          final sj = jsonDecode(setRes.body);
-          if (sj is Map && sj['status'] == 'success' && sj['data'] is Map) {
-            final data = Map<String, dynamic>.from(sj['data'] as Map);
-            if (data['models'] is List) {
-              final parsed = (data['models'] as List)
-                  .whereType<Map>()
-                  .map((m) => CbuModelItem.fromJson(Map<String, dynamic>.from(m)))
-                  .where((m) => m.code != 'ckd')
-                  .toList();
-              if (parsed.isNotEmpty) models = parsed;
-            }
-            if (data['ckd_parts'] is List) {
-              final parsed = (data['ckd_parts'] as List)
-                  .whereType<Map>()
-                  .map((m) => CkdPartItem.fromJson(Map<String, dynamic>.from(m)))
-                  .toList();
-              if (parsed.isNotEmpty) ckdParts = parsed;
-            }
-          }
-        }
+    final results = await Future.wait([
+      UbWebApi.instance.getUb({'action': 'get_settings'}),
+      UbWebApi.instance.getUb({'action': 'monthly_reports', 'year_month': ym}),
+    ]);
 
-        final repRes = await http
-            .get(Uri.parse('$base?action=monthly_reports&year_month=$ym'), headers: const {'Accept': 'application/json'})
-            .timeout(const Duration(seconds: 12));
-        if (repRes.statusCode >= 200 && repRes.statusCode < 300) {
-          final rj = jsonDecode(repRes.body);
-          if (rj is Map && rj['status'] == 'success' && rj['data'] is List) {
-            final reps = (rj['data'] as List).whereType<Map>().map((m) => Map<String, dynamic>.from(m)).toList();
-            return (models: models, ckdParts: ckdParts, reports: reps, fromServer: true);
-          }
-        }
-      } catch (_) {}
+    final setRes = results[0];
+    final repRes = results[1];
+
+    if (setRes.ok && setRes.map['status'] == 'success' && setRes.map['data'] is Map) {
+      final data = Map<String, dynamic>.from(setRes.map['data'] as Map);
+      if (data['models'] is List) {
+        final parsed = (data['models'] as List)
+            .whereType<Map>()
+            .map((m) => CbuModelItem.fromJson(Map<String, dynamic>.from(m)))
+            .where((m) => m.code != 'ckd')
+            .toList();
+        if (parsed.isNotEmpty) models = parsed;
+      }
+      if (data['ckd_parts'] is List) {
+        final parsed = (data['ckd_parts'] as List)
+            .whereType<Map>()
+            .map((m) => CkdPartItem.fromJson(Map<String, dynamic>.from(m)))
+            .toList();
+        if (parsed.isNotEmpty) ckdParts = parsed;
+      }
+    }
+
+    if (repRes.ok && repRes.map['status'] == 'success' && repRes.map['data'] is List) {
+      final reps = (repRes.map['data'] as List)
+          .whereType<Map>()
+          .map((m) => Map<String, dynamic>.from(m))
+          .toList();
+      return (models: models, ckdParts: ckdParts, reports: reps, fromServer: true);
     }
 
     // Fallback to local Checksheet A3 reports

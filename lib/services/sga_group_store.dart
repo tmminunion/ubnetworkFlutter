@@ -1,10 +1,9 @@
 import 'dart:convert';
 
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/kyt_models.dart';
-import 'local_store.dart';
+import 'ub_web_api.dart';
 
 class LineMemberOption {
   const LineMemberOption({
@@ -121,27 +120,21 @@ class SgaGroupStore {
       ];
 
   Future<({List<SgaGroup> groups, bool fromServer})> fetchGroups({int year = 2026}) async {
-    final cfg = await LocalStore.instance.getSettings();
-    final base = cfg.serverApiUrl.split('?').first.trim();
-
-    if (base.isNotEmpty) {
-      try {
-        final uri = Uri.parse('$base?action=get_sga_groups&shift=ALL&year=$year&_t=${DateTime.now().millisecondsSinceEpoch}');
-        final res = await http.get(uri, headers: const {'Accept': 'application/json'}).timeout(const Duration(seconds: 12));
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          final json = jsonDecode(res.body);
-          if (json is Map && json['status'] == 'success' && json['data'] is List) {
-            final parsed = (json['data'] as List)
-                .whereType<Map>()
-                .map((m) => SgaGroup.fromJson(Map<String, dynamic>.from(m)))
-                .toList();
-            if (parsed.isNotEmpty) {
-              await _saveCache(parsed);
-              return (groups: parsed, fromServer: true);
-            }
-          }
-        }
-      } catch (_) {}
+    final res = await UbWebApi.instance.getUb({
+      'action': 'get_sga_groups',
+      'shift': 'ALL',
+      'year': '$year',
+      '_t': '${DateTime.now().millisecondsSinceEpoch}',
+    });
+    if (res.ok && res.map['status'] == 'success' && res.map['data'] is List) {
+      final parsed = (res.map['data'] as List)
+          .whereType<Map>()
+          .map((m) => SgaGroup.fromJson(Map<String, dynamic>.from(m)))
+          .toList();
+      if (parsed.isNotEmpty) {
+        await _saveCache(parsed);
+        return (groups: parsed, fromServer: true);
+      }
     }
 
     final cached = await _loadCache();
@@ -153,27 +146,21 @@ class SgaGroupStore {
   }
 
   Future<List<LineMemberOption>> fetchLineMembers() async {
-    final cfg = await LocalStore.instance.getSettings();
-    final base = cfg.serverApiUrl.split('?').first.trim();
-    if (base.isEmpty) return const [];
-    try {
-      final uri = Uri.parse('$base?action=get_members&shift=ALL&_t=${DateTime.now().millisecondsSinceEpoch}');
-      final res = await http.get(uri, headers: const {'Accept': 'application/json'}).timeout(const Duration(seconds: 10));
-      if (res.statusCode >= 200 && res.statusCode < 300) {
-        final json = jsonDecode(res.body);
-        if (json is Map && json['status'] == 'success' && json['data'] is List) {
-          return (json['data'] as List)
-              .whereType<Map>()
-              .map((m) => LineMemberOption.fromJson(Map<String, dynamic>.from(m)))
-              .toList();
-        }
-      }
-    } catch (_) {}
+    final res = await UbWebApi.instance.getUb({
+      'action': 'get_members',
+      'shift': 'ALL',
+      '_t': '${DateTime.now().millisecondsSinceEpoch}',
+    });
+    if (res.ok && res.map['status'] == 'success' && res.map['data'] is List) {
+      return (res.map['data'] as List)
+          .whereType<Map>()
+          .map((m) => LineMemberOption.fromJson(Map<String, dynamic>.from(m)))
+          .toList();
+    }
     return const [];
   }
 
   Future<({bool synced, String message})> saveGroup(SgaGroup group) async {
-    // 1. Offline-first update
     final current = await _loadCache();
     final list = current.isNotEmpty ? current : defaultSeedGroups();
     final idx = list.indexWhere((g) => g.id == group.id);
@@ -184,43 +171,27 @@ class SgaGroupStore {
     }
     await _saveCache(list);
 
-    // 2. Push to MySQL bungtemin.net
-    final cfg = await LocalStore.instance.getSettings();
-    final base = cfg.serverApiUrl.split('?').first.trim();
-    if (base.isEmpty) return (synced: false, message: 'Tersimpan di lokal.');
-
-    try {
-      final payload = {
-        'id': int.tryParse(group.id) ?? 0,
-        'code': group.code,
-        'name': group.name,
-        'shift': group.shift,
-        'posArea': group.posArea,
-        'circleTema': group.circleTema,
-        'tlName': group.tlName,
-        'tlNoreg': group.tlNoreg,
-        'members': group.members.map((m) => m.toJson()).toList(),
-      };
-      final headers = <String, String>{
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      };
-      if (cfg.apiKey.trim().isNotEmpty) {
-        headers['x-ub-api-key'] = cfg.apiKey.trim();
-      }
-      final res = await http
-          .post(Uri.parse('$base?action=save_sga_group'), headers: headers, body: jsonEncode(payload))
-          .timeout(const Duration(seconds: 12));
-      if (res.statusCode >= 200 && res.statusCode < 300) {
-        final json = jsonDecode(res.body);
-        if (json is Map && json['status'] == 'success') {
-          return (synced: true, message: 'Group "${group.name}" tersimpan ke MySQL!');
-        }
-      }
-      return (synced: false, message: 'Tersimpan di lokal (MySQL HTTP ${res.statusCode}).');
-    } catch (_) {
-      return (synced: false, message: 'Tersimpan di lokal (offline).');
+    final payload = {
+      'id': int.tryParse(group.id) ?? 0,
+      'code': group.code,
+      'name': group.name,
+      'shift': group.shift,
+      'posArea': group.posArea,
+      'circleTema': group.circleTema,
+      'tlName': group.tlName,
+      'tlNoreg': group.tlNoreg,
+      'members': group.members.map((m) => m.toJson()).toList(),
+    };
+    final res = await UbWebApi.instance.postUb('save_sga_group', payload);
+    if (res.ok && res.map['status'] == 'success') {
+      return (synced: true, message: 'Group "${group.name}" tersimpan ke MySQL!');
     }
+    return (
+      synced: false,
+      message: res.statusCode > 0
+          ? 'Tersimpan di lokal (MySQL HTTP ${res.statusCode}).'
+          : 'Tersimpan di lokal (offline).',
+    );
   }
 
   Future<({bool synced, String message})> deleteGroup(SgaGroup group) async {
@@ -229,25 +200,14 @@ class SgaGroupStore {
     list.removeWhere((g) => g.id == group.id);
     await _saveCache(list);
 
-    final cfg = await LocalStore.instance.getSettings();
-    final base = cfg.serverApiUrl.split('?').first.trim();
     final numericId = int.tryParse(group.id);
-    if (base.isEmpty || numericId == null) {
+    if (numericId == null) {
       return (synced: false, message: 'Group dihapus dari lokal.');
     }
-
-    try {
-      final res = await http
-          .post(
-            Uri.parse('$base?action=delete_sga_group'),
-            headers: const {'Content-Type': 'application/json', 'Accept': 'application/json'},
-            body: jsonEncode({'id': numericId}),
-          )
-          .timeout(const Duration(seconds: 10));
-      if (res.statusCode >= 200 && res.statusCode < 300) {
-        return (synced: true, message: 'Group "${group.name}" dihapus dari MySQL.');
-      }
-    } catch (_) {}
+    final res = await UbWebApi.instance.postUb('delete_sga_group', {'id': numericId});
+    if (res.ok) {
+      return (synced: true, message: 'Group "${group.name}" dihapus dari MySQL.');
+    }
     return (synced: false, message: 'Group dihapus dari lokal.');
   }
 

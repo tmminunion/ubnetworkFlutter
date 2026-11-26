@@ -32,19 +32,37 @@ class _ChecksheetScreenState extends State<ChecksheetScreen> {
   final _paperBoundaryKey = GlobalKey();
 
   UbSettings _cfg = UbSettings();
-  ChecksheetReport? _rep;
+  late ChecksheetReport _rep;
+  List<ShiftTemplate> _templates = UbMasterData.masterTemplates;
   ({String finish, String label})? _prevCarry;
-  bool _loading = true;
-  bool _isOnline = false;
+
+  bool _fetchingOnline = true;
+  bool _isOnline = true;
+  bool _foundInServer = false;
   bool _syncing = false;
   bool _printing = false;
   double _currentScale = 0.45;
+  int _loadSeq = 0;
 
   @override
   void initState() {
     super.initState();
     _transformCtrl.addListener(_onMatrixChanged);
-    _init();
+
+    // 1:1 Next.js Smooth UX: Render kertas instan di frame ke-1 sesuai Template Harian (tanpa layar kosong / blocking spinner!)
+    final userShift = (AuthService.instance.currentUser?.shift ?? '').toUpperCase();
+    final initDate = widget.initialDate ?? UbMasterData.wibToday();
+    final initShift = (widget.initialShift ??
+            (userShift == 'RED' || userShift == 'WHITE' ? userShift : 'WHITE'))
+        .toUpperCase();
+    _rep = UbMasterData.createTemplateReport(
+      date: initDate,
+      shift: initShift == 'RED' ? 'RED' : 'WHITE',
+      cfg: _cfg,
+    );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => _fitWidth());
+    _bootstrapOnline(initDate, initShift == 'RED' ? 'RED' : 'WHITE');
   }
 
   @override
@@ -61,18 +79,21 @@ class _ChecksheetScreenState extends State<ChecksheetScreen> {
     }
   }
 
-  Future<void> _init() async {
+  Future<void> _bootstrapOnline(String date, String shift) async {
     final cfg = await LocalStore.instance.getSettings();
-    final userShift = AuthService.instance.currentUser?.shift ?? '';
-    final dt = widget.initialDate ?? UbMasterData.wibToday();
-    final rawSh = (widget.initialShift ??
-            (userShift == 'RED' || userShift == 'WHITE'
-                ? userShift
-                : (cfg.role == 'RED' ? 'RED' : 'WHITE')))
-        .toUpperCase();
+    final cachedTpls = await LocalStore.instance.getCachedTemplates();
+    if (!mounted) return;
     _cfg = cfg;
-    await _loadReport(dt, rawSh == 'RED' ? 'RED' : 'WHITE');
-    WidgetsBinding.instance.addPostFrameCallback((_) => _fitWidth());
+    _templates = cachedTpls;
+
+    final userShift = (AuthService.instance.currentUser?.shift ?? '').toUpperCase();
+    final resolvedShift = widget.initialShift != null
+        ? shift
+        : (userShift == 'RED' || userShift == 'WHITE'
+            ? userShift
+            : (cfg.role == 'RED' ? 'RED' : 'WHITE'));
+
+    await _loadReport(date, resolvedShift);
   }
 
   void _fitWidth() {
@@ -103,76 +124,79 @@ class _ChecksheetScreenState extends State<ChecksheetScreen> {
     _transformCtrl.value = m;
   }
 
-  Future<void> _loadReport(String date, String shift) async {
-    setState(() => _loading = true);
-    final id = UbMasterData.makeReportId(date, shift, _cfg.lineName);
+  /// Muat data checksheet secara smooth (optimistic template render + background online hydration 1:1 Next.js).
+  Future<void> _loadReport(
+    String date,
+    String shift, {
+    String? sessionOverride,
+    String? templateOverride,
+    bool forceRefreshFromServer = false,
+  }) async {
+    final normShift = shift.toUpperCase() == 'RED' ? 'RED' : 'WHITE';
+    final seq = ++_loadSeq;
 
-    // 1:1 Ubnetwork Next.js: selalu cari data shift hari ini secara ONLINE dulu
-    final onlineRes = await LocalStore.instance.fetchOnlineReport(
-      date: date,
-      shift: shift,
-      lineName: _cfg.lineName,
-    );
-    final existingLocal = await LocalStore.instance.getReport(id);
-    final prev = onlineRes.online
-        ? await LocalStore.instance.fetchOnlinePrevFinish(
-            targetDate: date,
-            targetShift: shift,
-            lineName: _cfg.lineName,
-          )
-        : await LocalStore.instance.findLatestPrevFinish(date, shift, false);
+    // Optimistic instant template switch on canvas (0ms lag when changing date/shift/session)
+    final needsInstantSwitch = _rep.tanggal != date ||
+        _rep.shift != normShift ||
+        (sessionOverride != null && _rep.session != sessionOverride) ||
+        (templateOverride != null && _rep.templateCode != templateOverride);
 
-    ChecksheetReport loaded;
-    if (onlineRes.online && onlineRes.found && onlineRes.report != null) {
-      loaded = onlineRes.report!;
-    } else if (existingLocal != null) {
-      loaded = existingLocal;
-    } else {
-      final dtObj = DateTime.tryParse(date);
-      final isFri = dtObj != null && dtObj.weekday == DateTime.friday;
-      final tpl = isFri ? 'jumat_normal' : 'pagi_normal';
-      final defCcr = shift == 'RED' ? _cfg.ccrTargetRed : _cfg.ccrTargetWhite;
-      final autoStart = prev != null ? UbMasterData.addNumberPreservePad(prev.finish, 1) : '';
-      final autoFin = (autoStart.isNotEmpty && defCcr > 0)
-          ? UbMasterData.addNumberPreservePad(autoStart, defCcr - 1)
-          : '';
-      loaded = ChecksheetReport(
-        id: id,
-        tanggal: date,
-        shift: shift,
-        session: 'day',
-        workMode: 'normal',
-        templateCode: tpl,
-        overtimeHours: 2,
-        lineName: _cfg.lineName,
-        taktTime: _cfg.taktTime,
-        ccrPlan: defCcr,
-        picName: shift == 'RED' ? 'KAMALUDIN' : 'DWI MULYONO',
-        spvName: shift == 'RED' ? 'MASRURI / TRI RUSTIANTORO' : 'DADANG SURYADI / NUNU FATULAH',
-        noBodyStart: autoStart,
-        noBodyFinish: autoFin,
-        cbuModels: UbMasterData.defaultCbuModels(),
-        ckdParts: UbMasterData.defaultCkdParts(),
-        members: UbMasterData.defaultMembers(shift),
-        slots: UbMasterData.buildSlotsFromTemplate(tpl, _cfg.taktTime, 2),
+    if (needsInstantSwitch) {
+      final instantDraft = UbMasterData.createTemplateReport(
+        date: date,
+        shift: normShift,
+        cfg: _cfg,
+        sessionOverride: sessionOverride,
+        templateOverride: templateOverride,
+        customTemplates: _templates,
       );
+      setState(() {
+        _rep = instantDraft;
+        _fetchingOnline = true;
+        _foundInServer = false;
+      });
+    } else {
+      setState(() => _fetchingOnline = true);
     }
 
-    if (!mounted) return;
+    // Jika ada cache lokal yang sudah tersimpan untuk tanggal+shift ini, tampilkan instan sambil menunggu server terbaru
+    if (!forceRefreshFromServer && sessionOverride == null && templateOverride == null) {
+      final localId = UbMasterData.makeReportId(date, normShift, _cfg.lineName);
+      final quickLocal = await LocalStore.instance.getReport(localId);
+      if (mounted && seq == _loadSeq && quickLocal != null && quickLocal.hasUserEdits) {
+        setState(() => _rep = quickLocal);
+      }
+    }
+
+    final res = await LocalStore.instance.loadOrCreateReportForDateShift(
+      date: date,
+      shift: normShift,
+      sessionOverride: sessionOverride,
+      templateOverride: templateOverride,
+      forceRefreshFromServer: forceRefreshFromServer,
+    );
+
+    if (!mounted || seq != _loadSeq) return;
+    final updatedCfg = await LocalStore.instance.getSettings();
+    if (!mounted || seq != _loadSeq) return;
+
     setState(() {
-      _rep = loaded;
-      _prevCarry = prev;
-      _isOnline = onlineRes.online;
-      _loading = false;
+      _cfg = updatedCfg;
+      _templates = res.templates;
+      _rep = res.report;
+      _prevCarry = res.prevCarry;
+      _isOnline = res.online;
+      _foundInServer = res.foundInServer;
+      _fetchingOnline = false;
     });
-    if (!onlineRes.online) {
-      _toast('Koneksi offline — data shift $shift ($date) memakai cache lokal', isErr: true);
+
+    if (forceRefreshFromServer) {
+      _toast(res.message, isErr: !res.online);
     }
   }
 
   Future<void> _persistLocal({bool silent = false}) async {
     final rep = _rep;
-    if (rep == null) return;
     if (!_cfg.canEditShift(rep.shift)) {
       _toast('Role ${_cfg.role} hanya dapat melihat shift ${rep.shift}', isErr: true);
       return;
@@ -186,7 +210,7 @@ class _ChecksheetScreenState extends State<ChecksheetScreen> {
 
   Future<void> _syncNow() async {
     final rep = _rep;
-    if (rep == null || _syncing) return;
+    if (_syncing) return;
     if (!_cfg.canEditShift(rep.shift)) {
       _toast('Role ${_cfg.role} tidak diizinkan sync shift ${rep.shift}', isErr: true);
       return;
@@ -195,13 +219,19 @@ class _ChecksheetScreenState extends State<ChecksheetScreen> {
     await _persistLocal(silent: true);
     final out = await LocalStore.instance.syncReportToServer(rep);
     if (!mounted) return;
-    setState(() => _syncing = false);
+    setState(() {
+      _syncing = false;
+      if (out.ok) {
+        _isOnline = true;
+        _foundInServer = true;
+      }
+    });
     _toast(out.message, isErr: !out.ok);
   }
 
   Future<void> _printPdf() async {
     final rep = _rep;
-    if (rep == null || _printing) return;
+    if (_printing) return;
     setState(() => _printing = true);
     try {
       final boundary = _paperBoundaryKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
@@ -234,18 +264,14 @@ class _ChecksheetScreenState extends State<ChecksheetScreen> {
   }
 
   void _shiftDate(int delta) {
-    final rep = _rep;
-    if (rep == null) return;
-    final d = DateTime.tryParse(rep.tanggal) ?? DateTime.now();
+    final d = DateTime.tryParse(_rep.tanggal) ?? DateTime.now();
     final next = d.add(Duration(days: delta));
     final iso = '${next.year.toString().padLeft(4, '0')}-${next.month.toString().padLeft(2, '0')}-${next.day.toString().padLeft(2, '0')}';
-    _loadReport(iso, rep.shift);
+    _loadReport(iso, _rep.shift);
   }
 
   Future<void> _pickDate() async {
-    final rep = _rep;
-    if (rep == null) return;
-    final cur = DateTime.tryParse(rep.tanggal) ?? DateTime.now();
+    final cur = DateTime.tryParse(_rep.tanggal) ?? DateTime.now();
     final picked = await showDatePicker(
       context: context,
       initialDate: cur,
@@ -254,7 +280,7 @@ class _ChecksheetScreenState extends State<ChecksheetScreen> {
     );
     if (picked != null) {
       final iso = '${picked.year.toString().padLeft(4, '0')}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
-      await _loadReport(iso, rep.shift);
+      await _loadReport(iso, _rep.shift);
     }
   }
 
@@ -271,7 +297,6 @@ class _ChecksheetScreenState extends State<ChecksheetScreen> {
 
   Future<void> _handleTapSlot(int slotNo) async {
     final rep = _rep;
-    if (rep == null) return;
     final idx = rep.slots.indexWhere((s) => s.no == slotNo);
     if (idx < 0) return;
     final unfilledPrev = rep.slots.where((r) => r.no < slotNo && !r.isBlocked && r.act == null).length;
@@ -290,6 +315,16 @@ class _ChecksheetScreenState extends State<ChecksheetScreen> {
       updated.lineStation = updated.problems.first.lineStation;
       updated.problem = updated.problems.map((p) => p.problem).where((x) => x.isNotEmpty).join('; ');
       updated.countermeasure = updated.problems.map((p) => p.countermeasure).where((x) => x.isNotEmpty).join('; ');
+      final intSum = updated.problems.where((p) => p.category == 'INT').fold<double>(0, (a, p) => a + p.delayMin);
+      final extSum = updated.problems.where((p) => p.category == 'EXT').fold<double>(0, (a, p) => a + p.delayMin);
+      updated.delayCategory = intSum >= extSum ? 'INT' : 'EXT';
+    } else if (updated.isBlocked) {
+      updated.act = null;
+      updated.plan = 0;
+      updated.problem = '';
+      updated.countermeasure = '';
+      updated.delayMin = 0;
+      updated.lossUnits = 0;
     }
 
     rep.slots[idx] = updated;
@@ -300,6 +335,11 @@ class _ChecksheetScreenState extends State<ChecksheetScreen> {
         }
       }
     }
+
+    // Sinkronkan jumlah slot lembur akhir aktif (1:1 Next.js)
+    final activeOtCount = rep.slots.where((r) => (r.isOvertime || r.no >= 9) && !r.isBlocked && !r.isEarlyOvertime).length;
+    rep.overtimeHours = activeOtCount;
+
     final nextTotAct = rep.slots.fold<int>(0, (a, r) => a + (!r.isBlocked && r.act != null ? r.act! : 0));
     if (rep.cbuSource != 'manual') {
       rep.cbuModels = UbMasterData.calculateCbuByRatio(nextTotAct, rep.cbuModels);
@@ -314,7 +354,6 @@ class _ChecksheetScreenState extends State<ChecksheetScreen> {
 
   Future<void> _handleAutoFillAll() async {
     final rep = _rep;
-    if (rep == null) return;
     var filled = 0;
     for (final r in rep.slots) {
       if (!r.isBlocked && r.act == null) {
@@ -336,356 +375,506 @@ class _ChecksheetScreenState extends State<ChecksheetScreen> {
   @override
   Widget build(BuildContext context) {
     final rep = _rep;
-    final stats = rep != null ? UbMasterData.computeStats(rep) : null;
+    final stats = UbMasterData.computeStats(rep);
+    final todayIso = UbMasterData.wibToday();
+    final isToday = rep.tanggal == todayIso;
 
     return Scaffold(
       backgroundColor: UbColors.bg,
       body: SafeArea(
         child: Column(
           children: [
-            // TOP CONTROL BAR (IDENTIK UBNETWORK)
+            // TOP CONTROL BAR (1:1 UBNETWORK NEXT.JS — COMPACT & RESPONSIVE)
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
               decoration: BoxDecoration(
-                color: UbColors.bg.withValues(alpha: 0.92),
+                color: UbColors.bg.withValues(alpha: 0.94),
                 border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.12))),
               ),
               child: Row(
                 children: [
                   IconButton(
                     onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.arrow_back_rounded, size: 20),
+                    icon: const Icon(Icons.arrow_back_rounded, size: 19),
                     visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                   ),
                   IconButton(
                     onPressed: () => _shiftDate(-1),
-                    icon: const Icon(Icons.chevron_left_rounded, size: 20),
+                    icon: const Icon(Icons.chevron_left_rounded, size: 19),
                     visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 28, minHeight: 32),
                   ),
                   InkWell(
                     onTap: _pickDate,
+                    onLongPress: isToday ? null : () => _loadReport(todayIso, rep.shift),
                     borderRadius: BorderRadius.circular(8),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                       decoration: BoxDecoration(
                         color: UbColors.surface,
-                        border: Border.all(color: UbColors.border),
+                        border: Border.all(color: isToday ? UbColors.cyan.withValues(alpha: 0.55) : UbColors.border),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
-                        rep != null ? UbMasterData.formatDDMMYYYY(rep.tanggal) : '-',
-                        style: const TextStyle(fontFamily: 'monospace', fontSize: 12, fontWeight: FontWeight.w800, color: UbColors.cyan),
+                        UbMasterData.formatDDMMYYYY(rep.tanggal),
+                        style: const TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w800,
+                          color: UbColors.cyan,
+                        ),
                       ),
                     ),
                   ),
                   IconButton(
                     onPressed: () => _shiftDate(1),
-                    icon: const Icon(Icons.chevron_right_rounded, size: 20),
+                    icon: const Icon(Icons.chevron_right_rounded, size: 19),
                     visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(minWidth: 28, minHeight: 32),
                   ),
-                  if (rep != null)
-                    InkWell(
-                      onTap: () {
-                        final nextShift = rep.shift == 'RED' ? 'WHITE' : 'RED';
-                        _loadReport(rep.tanggal, nextShift);
-                      },
-                      borderRadius: BorderRadius.circular(8),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: rep.shift == 'RED'
-                              ? UbColors.rose.withValues(alpha: 0.18)
-                              : Colors.white.withValues(alpha: 0.14),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: rep.shift == 'RED'
-                                ? UbColors.rose.withValues(alpha: 0.55)
-                                : Colors.white.withValues(alpha: 0.35),
+                  if (!isToday)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 4),
+                      child: InkWell(
+                        onTap: () => _loadReport(todayIso, rep.shift),
+                        borderRadius: BorderRadius.circular(7),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: UbColors.cyan.withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(7),
+                            border: Border.all(color: UbColors.cyan.withValues(alpha: 0.45)),
                           ),
-                        ),
-                        child: Text(
-                          rep.shift,
-                          style: TextStyle(
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w900,
-                            color: rep.shift == 'RED' ? const Color(0xFFFDA4AF) : Colors.white,
+                          child: const Text(
+                            'Hari Ini',
+                            style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: UbColors.cyan),
                           ),
                         ),
                       ),
                     ),
+                  // Shift Toggle (RED / WHITE)
+                  InkWell(
+                    onTap: () {
+                      final nextShift = rep.shift == 'RED' ? 'WHITE' : 'RED';
+                      _loadReport(rep.tanggal, nextShift);
+                    },
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: rep.shift == 'RED'
+                            ? UbColors.rose.withValues(alpha: 0.18)
+                            : Colors.white.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: rep.shift == 'RED'
+                              ? UbColors.rose.withValues(alpha: 0.55)
+                              : Colors.white.withValues(alpha: 0.35),
+                        ),
+                      ),
+                      child: Text(
+                        rep.shift,
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                          color: rep.shift == 'RED' ? const Color(0xFFFDA4AF) : Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  // Day / Night Session Quick Toggle (☀️D / 🌙N)
+                  InkWell(
+                    onTap: () {
+                      final nextSess = rep.session == 'night' ? 'day' : 'night';
+                      final nextTpl = UbMasterData.defaultTemplateCode(
+                        rep.tanggal,
+                        session: nextSess,
+                        workMode: rep.workMode,
+                      );
+                      setState(() {
+                        rep.session = nextSess;
+                        rep.templateCode = nextTpl;
+                        if (nextSess == 'night') rep.otAwal = 'none';
+                        rep.slots = UbMasterData.buildSlotsFromTemplate(
+                          nextTpl,
+                          rep.taktTime,
+                          rep.overtimeHours,
+                          prevSlots: rep.slots,
+                          otAwalMode: rep.otAwal,
+                          customTemplates: _templates,
+                        );
+                      });
+                    },
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: rep.session == 'night'
+                            ? const Color(0xFF1E293B)
+                            : UbColors.amber.withValues(alpha: 0.16),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: rep.session == 'night'
+                              ? Colors.white.withValues(alpha: 0.25)
+                              : UbColors.amber.withValues(alpha: 0.5),
+                        ),
+                      ),
+                      child: Text(
+                        rep.session == 'night' ? '🌙N' : '☀️D',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                          color: rep.session == 'night' ? Colors.white : UbColors.amber,
+                        ),
+                      ),
+                    ),
+                  ),
                   const Spacer(),
-                  // Online / Refresh Server Status
-                  IconButton(
-                    onPressed: _loading || rep == null
+                  // Online / Server vs Template Live Status Pill
+                  InkWell(
+                    onTap: _fetchingOnline
                         ? null
-                        : () => _loadReport(rep.tanggal, rep.shift),
-                    icon: Icon(
-                      _isOnline ? Icons.wifi_rounded : Icons.wifi_off_rounded,
-                      size: 18,
-                      color: _isOnline ? UbColors.emerald : UbColors.rose,
+                        : () => _loadReport(
+                              rep.tanggal,
+                              rep.shift,
+                              forceRefreshFromServer: true,
+                            ),
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+                      margin: const EdgeInsets.only(right: 6),
+                      decoration: BoxDecoration(
+                        color: _fetchingOnline
+                            ? UbColors.amber.withValues(alpha: 0.14)
+                            : (!_isOnline
+                                ? UbColors.rose.withValues(alpha: 0.14)
+                                : (_foundInServer
+                                    ? UbColors.emerald.withValues(alpha: 0.14)
+                                    : UbColors.cyan.withValues(alpha: 0.14))),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: _fetchingOnline
+                              ? UbColors.amber.withValues(alpha: 0.45)
+                              : (!_isOnline
+                                  ? UbColors.rose.withValues(alpha: 0.45)
+                                  : (_foundInServer
+                                      ? UbColors.emerald.withValues(alpha: 0.45)
+                                      : UbColors.cyan.withValues(alpha: 0.45))),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (_fetchingOnline)
+                            const SizedBox(
+                              width: 11,
+                              height: 11,
+                              child: CircularProgressIndicator(strokeWidth: 1.8, color: UbColors.amber),
+                            )
+                          else
+                            Icon(
+                              !_isOnline
+                                  ? Icons.cloud_off_rounded
+                                  : (_foundInServer ? Icons.cloud_done_rounded : Icons.description_outlined),
+                              size: 13,
+                              color: !_isOnline
+                                  ? UbColors.rose
+                                  : (_foundInServer ? UbColors.emerald : UbColors.cyan),
+                            ),
+                          const SizedBox(width: 4),
+                          Text(
+                            _fetchingOnline
+                                ? 'Sync'
+                                : (!_isOnline
+                                    ? 'Lokal'
+                                    : (_foundInServer ? 'Server' : 'Template')),
+                            style: TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w800,
+                              color: _fetchingOnline
+                                  ? UbColors.amber
+                                  : (!_isOnline
+                                      ? UbColors.rose
+                                      : (_foundInServer ? UbColors.emerald : UbColors.cyan)),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                    tooltip: _isOnline ? 'Online · Muat ulang data server' : 'Offline · Coba hubungkan ulang',
-                    visualDensity: VisualDensity.compact,
                   ),
-                  // Sync Status Dot
-                  Container(
-                    width: 10,
-                    height: 10,
-                    margin: const EdgeInsets.only(right: 8),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: rep?.syncStatus == 'synced'
-                          ? UbColors.emerald
-                          : (rep?.syncStatus == 'failed' ? UbColors.rose : UbColors.amber),
-                    ),
-                  ),
-                  // Kirim (1x Sync)
+                  // Kirim (1x Sync ke MySQL & SharePoint)
                   FilledButton.icon(
                     style: FilledButton.styleFrom(
                       backgroundColor: UbColors.emerald,
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                       minimumSize: Size.zero,
                     ),
                     onPressed: _syncing ? null : _syncNow,
                     icon: _syncing
-                        ? const SizedBox(width: 13, height: 13, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : const Icon(Icons.send_rounded, size: 14),
-                    label: Text(_syncing ? '...' : 'Kirim', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+                        ? const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Icon(Icons.send_rounded, size: 13),
+                    label: Text(_syncing ? '...' : 'Kirim', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800)),
                   ),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: 5),
                   IconButton(
                     style: IconButton.styleFrom(
                       backgroundColor: UbColors.card,
+                      padding: const EdgeInsets.all(7),
+                      minimumSize: const Size(34, 34),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
                     onPressed: _printing ? null : _printPdf,
                     icon: _printing
-                        ? const SizedBox(width: 15, height: 15, child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.print_rounded, size: 18),
+                        ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.print_rounded, size: 17),
                     tooltip: 'Cetak / Export PDF A4',
                   ),
                 ],
               ),
             ),
 
-            // INTERACTIVE A3 CANVAS
+            // INTERACTIVE A3 i-REPORTER CANVAS (ALWAYS INSTANTLY VISIBLE — ZERO BLOCKING SPINNER)
             Expanded(
-              child: _loading || rep == null || stats == null
-                  ? const Center(child: CircularProgressIndicator())
-                  : Stack(
-                      children: [
-                        Positioned.fill(child: CustomPaint(painter: _DotGridPainter())),
-                        InteractiveViewer(
-                          transformationController: _transformCtrl,
-                          constrained: false,
-                          boundaryMargin: const EdgeInsets.all(320),
-                          minScale: 0.30,
-                          maxScale: 2.20,
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: RepaintBoundary(
-                              key: _paperBoundaryKey,
-                              child: ChecksheetPaper(
-                                report: rep,
-                                stats: stats,
-                                onTapHeader: () async {
-                                  final res = await ChecksheetModals.showHeaderModal(context, report: rep);
-                                  if (res == null) return;
-                                  final newShift = res['shift'] as String;
-                                  if (newShift != rep.shift) {
-                                    await _loadReport(rep.tanggal, newShift);
-                                    return;
-                                  }
-                                  rep.session = res['session'] as String;
-                                  rep.workMode = res['workMode'] as String;
-                                  rep.templateCode = res['templateCode'] as String;
-                                  rep.overtimeHours = res['overtimeHours'] as int;
-                                  rep.otAwal = res['otAwal'] as String;
-                                  rep.lineName = (res['lineName'] as String).isNotEmpty ? res['lineName'] as String : rep.lineName;
-                                  rep.taktTime = res['taktTime'] as double;
-                                  rep.picName = res['picName'] as String;
-                                  rep.spvName = res['spvName'] as String;
-                                  rep.slots = UbMasterData.buildSlotsFromTemplate(
-                                    rep.templateCode,
-                                    rep.taktTime,
-                                    rep.overtimeHours,
-                                    prevSlots: rep.slots,
-                                    otAwalMode: rep.otAwal,
-                                  );
-                                  await _persistLocal();
-                                },
-                                onTapSlot: _handleTapSlot,
-                                onAutoFillAll: _handleAutoFillAll,
-                                onTapCbu: () async {
-                                  final res = await ChecksheetModals.showCbuModal(
-                                    context,
-                                    initialModels: rep.cbuModels,
-                                    initialSource: rep.cbuSource,
-                                    totalAct: stats.totalAct,
-                                    totalPlan: stats.totalPlan,
-                                  );
-                                  if (res == null) return;
-                                  rep.cbuModels = res.models;
-                                  rep.cbuSource = res.source;
-                                  await _persistLocal();
-                                },
-                                onTapCkd: () async {
-                                  final res = await ChecksheetModals.showCkdModal(context, initialParts: rep.ckdParts);
-                                  if (res == null) return;
-                                  rep.ckdParts = res;
-                                  await _persistLocal();
-                                },
-                                onTapAbsen: () async {
-                                  final res = await ChecksheetModals.showAbsenModal(
-                                    context,
-                                    shift: rep.shift,
-                                    initialMembers: rep.members,
-                                  );
-                                  if (res == null) return;
-                                  rep.members = res;
-                                  await _persistLocal();
-                                },
-                                onTapNoBody: () async {
-                                  final res = await ChecksheetModals.showNoBodyModal(
-                                    context,
-                                    start: rep.noBodyStart,
-                                    finish: rep.noBodyFinish,
-                                    jamStop: rep.jamStopProduksi,
-                                    sysTime: stats.estimatedFinishTime,
-                                    effectiveCcr: stats.effectiveCcrPlan,
-                                    totalAct: stats.totalAct,
-                                    prevCarry: _prevCarry,
-                                  );
-                                  if (res == null) return;
-                                  rep.noBodyStart = res.start;
-                                  rep.noBodyFinish = res.finish;
-                                  rep.jamStopProduksi = res.jamStop;
-                                  await _persistLocal();
-                                },
-                                onTapOvertime: () async {
-                                  final res = await ChecksheetModals.showOvertimeModal(
-                                    context,
-                                    ccrPlan: stats.effectiveCcrPlan,
-                                    otHours: rep.actOtHours,
-                                  );
-                                  if (res == null) return;
-                                  rep.ccrPlan = res.ccrPlan;
-                                  rep.actOtHours = res.otHours;
-                                  rep.actOtUnits = (res.otHours * 32).round();
-                                  rep.overtimeHours = res.otHours.ceil().clamp(0, 3);
-                                  rep.slots = UbMasterData.buildSlotsFromTemplate(
-                                    rep.templateCode,
-                                    rep.taktTime,
-                                    rep.overtimeHours,
-                                    prevSlots: rep.slots,
-                                    otAwalMode: rep.otAwal,
-                                  );
-                                  await _persistLocal();
-                                },
-                              ),
-                            ),
-                          ),
+              child: Stack(
+                children: [
+                  Positioned.fill(child: CustomPaint(painter: _DotGridPainter())),
+                  if (_fetchingOnline)
+                    const Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      child: LinearProgressIndicator(
+                        minHeight: 2,
+                        color: UbColors.cyan,
+                        backgroundColor: Colors.transparent,
+                      ),
+                    ),
+                  InteractiveViewer(
+                    transformationController: _transformCtrl,
+                    constrained: false,
+                    boundaryMargin: const EdgeInsets.all(320),
+                    minScale: 0.30,
+                    maxScale: 2.20,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: RepaintBoundary(
+                        key: _paperBoundaryKey,
+                        child: ChecksheetPaper(
+                          report: rep,
+                          stats: stats,
+                          onTapHeader: () async {
+                            final res = await ChecksheetModals.showHeaderModal(
+                              context,
+                              report: rep,
+                              availableTemplates: _templates,
+                            );
+                            if (res == null) return;
+                            final newShift = res['shift'] as String;
+                            if (newShift != rep.shift) {
+                              await _loadReport(rep.tanggal, newShift);
+                              return;
+                            }
+                            rep.session = res['session'] as String;
+                            rep.workMode = res['workMode'] as String;
+                            rep.templateCode = res['templateCode'] as String;
+                            rep.overtimeHours = res['overtimeHours'] as int;
+                            rep.otAwal = res['otAwal'] as String;
+                            rep.lineName = (res['lineName'] as String).isNotEmpty
+                                ? res['lineName'] as String
+                                : rep.lineName;
+                            rep.taktTime = res['taktTime'] as double;
+                            rep.picName = res['picName'] as String;
+                            rep.spvName = res['spvName'] as String;
+                            rep.slots = UbMasterData.buildSlotsFromTemplate(
+                              rep.templateCode,
+                              rep.taktTime,
+                              rep.overtimeHours,
+                              prevSlots: rep.slots,
+                              otAwalMode: rep.otAwal,
+                              customTemplates: _templates,
+                            );
+                            await _persistLocal();
+                          },
+                          onTapSlot: _handleTapSlot,
+                          onAutoFillAll: _handleAutoFillAll,
+                          onTapCbu: () async {
+                            final res = await ChecksheetModals.showCbuModal(
+                              context,
+                              initialModels: rep.cbuModels,
+                              initialSource: rep.cbuSource,
+                              totalAct: stats.totalAct,
+                              totalPlan: stats.totalPlan,
+                            );
+                            if (res == null) return;
+                            rep.cbuModels = res.models;
+                            rep.cbuSource = res.source;
+                            await _persistLocal();
+                          },
+                          onTapCkd: () async {
+                            final res = await ChecksheetModals.showCkdModal(context, initialParts: rep.ckdParts);
+                            if (res == null) return;
+                            rep.ckdParts = res;
+                            await _persistLocal();
+                          },
+                          onTapAbsen: () async {
+                            final res = await ChecksheetModals.showAbsenModal(
+                              context,
+                              shift: rep.shift,
+                              initialMembers: rep.members,
+                            );
+                            if (res == null) return;
+                            rep.members = res;
+                            await _persistLocal();
+                          },
+                          onTapNoBody: () async {
+                            final res = await ChecksheetModals.showNoBodyModal(
+                              context,
+                              start: rep.noBodyStart,
+                              finish: rep.noBodyFinish,
+                              jamStop: rep.jamStopProduksi,
+                              sysTime: stats.estimatedFinishTime,
+                              effectiveCcr: stats.effectiveCcrPlan,
+                              totalAct: stats.totalAct,
+                              prevCarry: _prevCarry,
+                            );
+                            if (res == null) return;
+                            rep.noBodyStart = res.start;
+                            rep.noBodyFinish = res.finish;
+                            rep.jamStopProduksi = res.jamStop;
+                            await _persistLocal();
+                          },
+                          onTapOvertime: () async {
+                            final res = await ChecksheetModals.showOvertimeModal(
+                              context,
+                              ccrPlan: stats.effectiveCcrPlan,
+                              otHours: rep.actOtHours,
+                            );
+                            if (res == null) return;
+                            rep.ccrPlan = res.ccrPlan;
+                            rep.actOtHours = res.otHours;
+                            rep.actOtUnits = (res.otHours * (60 / (rep.taktTime > 0 ? rep.taktTime : 2.4)).round()).round();
+                            rep.overtimeHours = res.otHours.ceil().clamp(0, 3);
+                            rep.slots = UbMasterData.buildSlotsFromTemplate(
+                              rep.templateCode,
+                              rep.taktTime,
+                              rep.overtimeHours,
+                              prevSlots: rep.slots,
+                              otAwalMode: rep.otAwal,
+                              customTemplates: _templates,
+                            );
+                            await _persistLocal();
+                          },
                         ),
+                      ),
+                    ),
+                  ),
 
-                        // FLOATING SAVE BUTTON (BOTTOM LEFT)
-                        Positioned(
-                          left: 14,
-                          bottom: 14,
-                          child: InkWell(
-                            onTap: () => _persistLocal(),
-                            borderRadius: BorderRadius.circular(16),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                              decoration: BoxDecoration(
-                                color: UbColors.surface.withValues(alpha: 0.94),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(color: UbColors.cyan.withValues(alpha: 0.45)),
-                                boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 16)],
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(Icons.storage_rounded, size: 17, color: UbColors.cyan),
-                                  const SizedBox(width: 8),
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const Text('Simpan', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: UbColors.cyan)),
-                                      Text(
-                                        rep.syncStatus == 'synced' ? 'Tersinkron' : 'Draft Lokal',
-                                        style: const TextStyle(fontFamily: 'monospace', fontSize: 9.5, color: UbColors.textMuted),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
+                  // FLOATING SAVE BUTTON (BOTTOM LEFT)
+                  Positioned(
+                    left: 14,
+                    bottom: 14,
+                    child: InkWell(
+                      onTap: () => _persistLocal(),
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: UbColors.surface.withValues(alpha: 0.94),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: UbColors.cyan.withValues(alpha: 0.45)),
+                          boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 16)],
                         ),
-
-                        // FLOATING ZOOM & D-PAD (BOTTOM RIGHT)
-                        Positioned(
-                          right: 14,
-                          bottom: 14,
-                          child: Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: UbColors.surface.withValues(alpha: 0.92),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: UbColors.border),
-                              boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 18)],
-                            ),
-                            child: Column(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.storage_rounded, size: 17, color: UbColors.cyan),
+                            const SizedBox(width: 8),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: UbColors.bg,
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(color: UbColors.card),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      _dpadBtn('−', () => _zoomBy(-0.15), bg: Colors.transparent),
-                                      InkWell(
-                                        onTap: _fitWidth,
-                                        child: Padding(
-                                          padding: const EdgeInsets.symmetric(horizontal: 6),
-                                          child: Text(
-                                            '${(_currentScale * 100).round()}%',
-                                            style: const TextStyle(fontFamily: 'monospace', fontSize: 11, fontWeight: FontWeight.w900, color: UbColors.cyan),
-                                          ),
-                                        ),
-                                      ),
-                                      _dpadBtn('+', () => _zoomBy(0.15), bg: Colors.transparent),
-                                    ],
+                                const Text('Simpan', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: UbColors.cyan)),
+                                Text(
+                                  rep.syncStatus == 'synced'
+                                      ? 'Tersinkron Server'
+                                      : (_foundInServer ? 'Edit Draft' : 'Sesuai Template'),
+                                  style: const TextStyle(fontFamily: 'monospace', fontSize: 9.5, color: UbColors.textMuted),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // FLOATING ZOOM & D-PAD (BOTTOM RIGHT)
+                  Positioned(
+                    right: 14,
+                    bottom: 14,
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: UbColors.surface.withValues(alpha: 0.92),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: UbColors.border),
+                        boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 18)],
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: UbColors.bg,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: UbColors.card),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _dpadBtn('−', () => _zoomBy(-0.15), bg: Colors.transparent),
+                                InkWell(
+                                  onTap: _fitWidth,
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                                    child: Text(
+                                      '${(_currentScale * 100).round()}%',
+                                      style: const TextStyle(fontFamily: 'monospace', fontSize: 11, fontWeight: FontWeight.w900, color: UbColors.cyan),
+                                    ),
                                   ),
                                 ),
-                                const SizedBox(height: 5),
-                                _dpadBtn('▲', () => _panBy(0, 120)),
-                                const SizedBox(height: 4),
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    _dpadBtn('◀', () => _panBy(120, 0)),
-                                    const SizedBox(width: 4),
-                                    _dpadBtn('⛶', _fitWidth, bg: UbColors.cyan.withValues(alpha: 0.2), fg: UbColors.cyan),
-                                    const SizedBox(width: 4),
-                                    _dpadBtn('▶', () => _panBy(-120, 0)),
-                                  ],
-                                ),
-                                const SizedBox(height: 4),
-                                _dpadBtn('▼', () => _panBy(0, -120)),
+                                _dpadBtn('+', () => _zoomBy(0.15), bg: Colors.transparent),
                               ],
                             ),
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 5),
+                          _dpadBtn('▲', () => _panBy(0, 120)),
+                          const SizedBox(height: 4),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _dpadBtn('◀', () => _panBy(120, 0)),
+                              const SizedBox(width: 4),
+                              _dpadBtn('⛶', _fitWidth, bg: UbColors.cyan.withValues(alpha: 0.2), fg: UbColors.cyan),
+                              const SizedBox(width: 4),
+                              _dpadBtn('▶', () => _panBy(-120, 0)),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          _dpadBtn('▼', () => _panBy(0, -120)),
+                        ],
+                      ),
                     ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),

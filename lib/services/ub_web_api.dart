@@ -144,6 +144,72 @@ class UbWebApi {
     }
   }
 
+  /// 1:1 Next.js `/api/ub` gateway helper (attaches `ub_gate` cookie so Vercel
+  /// authenticates and injects server-side `X-UB-API-Key` to `bungtemin.net/ub/api`).
+  /// Supports custom external `serverApiUrl` if an explicit `apiKey` is configured.
+  Future<UbApiResponse> getUb(
+    Map<String, String> query, {
+    Duration timeout = const Duration(seconds: 12),
+  }) async {
+    try {
+      final cfg = await LocalStore.instance.getSettings();
+      final customUrl = cfg.serverApiUrl.split('?').first.trim();
+      final useCustomDirect = customUrl.isNotEmpty &&
+          !customUrl.contains('ubnetwork.vercel.app') &&
+          cfg.apiKey.trim().isNotEmpty;
+
+      final headers = await buildHeaders();
+      final Uri targetUri;
+      if (useCustomDirect) {
+        final base = Uri.parse(customUrl);
+        targetUri = base.replace(queryParameters: {...base.queryParameters, ...query});
+      } else {
+        targetUri = _uri('/api/ub', query);
+      }
+
+      final res = await http.get(targetUri, headers: headers).timeout(timeout);
+      return _wrap(res);
+    } catch (e) {
+      return UbApiResponse(ok: false, statusCode: 0, error: e.toString());
+    }
+  }
+
+  /// 1:1 Next.js `POST /api/ub?action=...` gateway helper.
+  Future<UbApiResponse> postUb(
+    String action,
+    Object? body, {
+    Map<String, String>? extraQuery,
+    Duration timeout = const Duration(seconds: 15),
+  }) async {
+    try {
+      final cfg = await LocalStore.instance.getSettings();
+      final customUrl = cfg.serverApiUrl.split('?').first.trim();
+      final useCustomDirect = customUrl.isNotEmpty &&
+          !customUrl.contains('ubnetwork.vercel.app') &&
+          cfg.apiKey.trim().isNotEmpty;
+
+      final query = <String, String>{
+        'action': action,
+        ...?extraQuery,
+      };
+      final headers = await buildHeaders(jsonBody: true);
+      final Uri targetUri;
+      if (useCustomDirect) {
+        final base = Uri.parse(customUrl);
+        targetUri = base.replace(queryParameters: {...base.queryParameters, ...query});
+      } else {
+        targetUri = _uri('/api/ub', query);
+      }
+
+      final res = await http
+          .post(targetUri, headers: headers, body: body == null ? null : jsonEncode(body))
+          .timeout(timeout);
+      return _wrap(res);
+    } catch (e) {
+      return UbApiResponse(ok: false, statusCode: 0, error: e.toString());
+    }
+  }
+
   UbApiResponse _wrap(http.Response res) {
     dynamic parsed;
     try {

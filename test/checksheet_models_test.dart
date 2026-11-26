@@ -22,6 +22,42 @@ void main() {
     expect(parts[1].partNo, '57404-KK010');
   });
 
+  test('defaultTemplateCode selects weekday, Friday, night, and puasa templates 1:1 with Next.js', () {
+    // 2026-11-26 is Thursday -> pagi_normal
+    expect(UbMasterData.defaultTemplateCode('2026-11-26'), 'pagi_normal');
+    // 2026-11-27 is Friday -> jumat_normal
+    expect(UbMasterData.defaultTemplateCode('2026-11-27'), 'jumat_normal');
+    expect(UbMasterData.defaultTemplateCode('2026-11-27', workMode: 'puasa'), 'jumat_puasa');
+    expect(UbMasterData.defaultTemplateCode('2026-11-26', session: 'night'), 'malam_normal');
+    expect(UbMasterData.defaultTemplateCode('2026-11-26', session: 'night', workMode: 'puasa'), 'malam_puasa');
+  });
+
+  test('createTemplateReport generates clean template draft with zero user edits and auto body start/finish', () {
+    final cfg = UbSettings(lineName: 'UB Assy', taktTime: 1.9, ccrTargetWhite: 220);
+    final rep = UbMasterData.createTemplateReport(
+      date: '2026-11-27', // Friday
+      shift: 'WHITE',
+      cfg: cfg,
+      prevCarry: (finish: '01000', label: 'RED Malam (2026-11-26)'),
+    );
+    expect(rep.templateCode, 'jumat_normal');
+    expect(rep.hasUserEdits, isFalse);
+    expect(rep.noBodyStart, '01001');
+    expect(rep.noBodyFinish, '01220');
+    expect(rep.slots.length, 11);
+    expect(rep.slots.where((s) => !s.isBlocked).length, 10); // 8 regular + 2 OT
+  });
+
+  test('UbSettings auto-migrates legacy unauthenticated bungtemin URL to Next.js /api/ub gateway', () {
+    final migrated = UbSettings.fromJson({
+      'lineName': 'UB ASSY',
+      'serverApiUrl': 'https://bungtemin.net/ub/api',
+      'apiKey': '',
+    });
+    expect(migrated.serverApiUrl, 'https://ubnetwork.vercel.app/api/ub');
+    expect(migrated.lineName, 'UB Assy');
+  });
+
   test('computeStats aggregates plan, act, diff, and internal efficiency', () {
     final slots = UbMasterData.buildSlotsFromTemplate('pagi_normal', 1.9, 2);
     slots[0].act = slots[0].plan;
