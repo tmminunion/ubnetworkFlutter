@@ -26,21 +26,25 @@ class QualityDailyStore {
     final findRes = results[1];
     var changed = false;
 
-    List<int?> red = local.red;
-    List<int?> white = local.white;
     double targetDu = local.targetDu;
-    List<QualityFinding> findings = local.findings;
+    Set<int> redZeroDays = Set<int>.from(local.redZeroDays);
+    Set<int> whiteZeroDays = Set<int>.from(local.whiteZeroDays);
+    List<QualityFinding> findings = List<QualityFinding>.from(local.findings);
 
     if (defectRes.ok && defectRes.map['data'] is Map) {
       final d = Map<String, dynamic>.from(defectRes.map['data'] as Map);
-      List<int?> parse31(dynamic raw, List<int?> fallback) {
+      if (d['target'] is num) targetDu = (d['target'] as num).toDouble();
+      Set<int> extractZeroDays(dynamic raw, Set<int> fallback) {
         if (raw is! List) return fallback;
-        return List<int?>.generate(31, (i) => i < raw.length && raw[i] is num ? (raw[i] as num).toInt() : null);
+        final out = <int>{};
+        for (var i = 0; i < raw.length && i < 31; i++) {
+          if (raw[i] is num && (raw[i] as num).toInt() == 0) out.add(i + 1);
+        }
+        return out;
       }
 
-      red = parse31(d['red'], red);
-      white = parse31(d['white'], white);
-      if (d['target'] is num) targetDu = (d['target'] as num).toDouble();
+      if (d['red'] is List) redZeroDays = extractZeroDays(d['red'], redZeroDays);
+      if (d['white'] is List) whiteZeroDays = extractZeroDays(d['white'], whiteZeroDays);
       changed = true;
     }
 
@@ -56,9 +60,9 @@ class QualityDailyStore {
       final merged = QualityMonthlyRecord(
         ym: ym,
         kind: kind,
-        red: red,
-        white: white,
         targetDu: targetDu,
+        redZeroDays: redZeroDays,
+        whiteZeroDays: whiteZeroDays,
         findings: findings,
       );
       await _saveLocal(merged);
@@ -90,12 +94,28 @@ class QualityDailyStore {
   Future<void> saveRecord(QualityMonthlyRecord rec) async {
     await _saveLocal(rec);
     // Sync 1:1 to Next.js PUT /api/quality/defect
+    List<int?> buildDailyCounts(String team, Set<int> zeroDays) {
+      final arr = List<int?>.filled(31, null);
+      for (final d in zeroDays) {
+        if (d >= 1 && d <= 31) arr[d - 1] = 0;
+      }
+      for (final f in rec.findings) {
+        if (f.team != team) continue;
+        final parts = f.date.split('-');
+        final day = parts.length >= 3 ? int.tryParse(parts[2]) : null;
+        if (day != null && day >= 1 && day <= 31) {
+          arr[day - 1] = (arr[day - 1] ?? 0) + f.qty;
+        }
+      }
+      return arr;
+    }
+
     await UbWebApi.instance.putJson('/api/quality/defect', {
       'month': rec.ym,
       'kind': rec.kind,
       'data': {
-        'red': rec.red,
-        'white': rec.white,
+        'red': buildDailyCounts('red', rec.redZeroDays),
+        'white': buildDailyCounts('white', rec.whiteZeroDays),
         'target': rec.targetDu,
       },
     });
