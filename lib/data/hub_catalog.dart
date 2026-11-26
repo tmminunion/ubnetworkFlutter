@@ -352,14 +352,6 @@ class HubCatalog {
       color: Color(0xFF94A3B8),
     ),
     QuickAppItem(
-      id: 'andon',
-      title: 'Andon Live Monitor',
-      subtitle: 'Status lini & alarm real-time',
-      route: '/andon',
-      icon: Icons.sensors_rounded,
-      color: Color(0xFFF43F5E),
-    ),
-    QuickAppItem(
       id: 'idea',
       title: 'Idea',
       subtitle: 'Kaizen SQPCHR & Innovation Portal',
