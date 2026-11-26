@@ -541,6 +541,7 @@ class HubCatalog {
           gradient: [Color(0xFF10B981), Color(0xFF16A34A)],
           accentColor: Color(0xFF34D399),
           icon: Icons.verified_user_rounded,
+          isNativeReady: true,
         ),
         SubModuleItem(
           id: 'patrol-slide',
@@ -551,6 +552,7 @@ class HubCatalog {
           gradient: [Color(0xFF0EA5E9), Color(0xFF2563EB)],
           accentColor: Color(0xFF38BDF8),
           icon: Icons.slideshow_rounded,
+          isNativeReady: true,
         ),
       ],
     ),
@@ -597,6 +599,7 @@ class HubCatalog {
           gradient: [Color(0xFF6366F1), Color(0xFF7C3AED)],
           accentColor: Color(0xFF818CF8),
           icon: Icons.tv_rounded,
+          isNativeReady: true,
         ),
         SubModuleItem(
           id: 'display-proses',
@@ -608,6 +611,7 @@ class HubCatalog {
         ), Color(0xFF4F46E5)],
           accentColor: Color(0xFFC084FC),
           icon: Icons.dashboard_rounded,
+          isNativeReady: true,
         ),
         SubModuleItem(
           id: 'display-kaizen',
@@ -619,6 +623,7 @@ class HubCatalog {
         ), Color(0xFF0D9488)],
           accentColor: Color(0xFF34D399),
           icon: Icons.auto_awesome_rounded,
+          isNativeReady: true,
         ),
         SubModuleItem(
           id: 'display-main',
@@ -629,6 +634,7 @@ class HubCatalog {
           gradient: [Color(0xFF3B82F6), Color(0xFF0891B2)],
           accentColor: Color(0xFF60A5FA),
           icon: Icons.bar_chart_rounded,
+          isNativeReady: true,
         ),
       ],
     ),
@@ -843,6 +849,7 @@ class HubCatalog {
           gradient: [Color(0xFF06B6D4), Color(0xFF2563EB)],
           accentColor: Color(0xFF22D3EE),
           icon: Icons.tv_rounded,
+          isNativeReady: true,
         ),
         SubModuleItem(
           id: 'display-proses',
@@ -854,6 +861,7 @@ class HubCatalog {
         ), Color(0xFF4F46E5)],
           accentColor: Color(0xFFC084FC),
           icon: Icons.dashboard_rounded,
+          isNativeReady: true,
         ),
         SubModuleItem(
           id: 'display-kaizen',
@@ -865,6 +873,7 @@ class HubCatalog {
         ), Color(0xFF0D9488)],
           accentColor: Color(0xFF34D399),
           icon: Icons.auto_awesome_rounded,
+          isNativeReady: true,
         ),
         SubModuleItem(
           id: 'display-main',
@@ -876,6 +885,7 @@ class HubCatalog {
         ), Color(0xFF0891B2)],
           accentColor: Color(0xFF60A5FA),
           icon: Icons.bar_chart_rounded,
+          isNativeReady: true,
         ),
       ],
     ),
@@ -956,6 +966,7 @@ class HubCatalog {
         ), Color(0xFF2563EB)],
           accentColor: Color(0xFF22D3EE),
           icon: Icons.tv_rounded,
+          isNativeReady: true,
         ),
         SubModuleItem(
           id: 'display-proses',
@@ -967,6 +978,7 @@ class HubCatalog {
         ), Color(0xFF4F46E5)],
           accentColor: Color(0xFFC084FC),
           icon: Icons.dashboard_rounded,
+          isNativeReady: true,
         ),
         SubModuleItem(
           id: 'display-kaizen',
@@ -978,6 +990,7 @@ class HubCatalog {
         ), Color(0xFF0D9488)],
           accentColor: Color(0xFF34D399),
           icon: Icons.auto_awesome_rounded,
+          isNativeReady: true,
         ),
         SubModuleItem(
           id: 'display-main',
@@ -988,6 +1001,7 @@ class HubCatalog {
           gradient: [Color(0xFF6366F1), Color(0xFF7C3AED)],
           accentColor: Color(0xFF818CF8),
           icon: Icons.bar_chart_rounded,
+          isNativeReady: true,
         ),
       ],
     ),
@@ -1045,6 +1059,7 @@ class HubCatalog {
           gradient: [Color(0xFF06B6D4), Color(0xFF2563EB)],
           accentColor: Color(0xFF22D3EE),
           icon: Icons.tv_rounded,
+          isNativeReady: true,
         ),
         SubModuleItem(
           id: 'display-proses',
@@ -1055,6 +1070,7 @@ class HubCatalog {
           gradient: [Color(0xFFA855F7), Color(0xFF4F46E5)],
           accentColor: Color(0xFFC084FC),
           icon: Icons.dashboard_rounded,
+          isNativeReady: true,
         ),
         SubModuleItem(
           id: 'display-kaizen',
@@ -1065,6 +1081,7 @@ class HubCatalog {
           gradient: [Color(0xFF10B981), Color(0xFF0D9488)],
           accentColor: Color(0xFF34D399),
           icon: Icons.auto_awesome_rounded,
+          isNativeReady: true,
         ),
         SubModuleItem(
           id: 'display-main',
@@ -1076,6 +1093,7 @@ class HubCatalog {
         ), Color(0xFF16A34A)],
           accentColor: Color(0xFFA3E635),
           icon: Icons.bar_chart_rounded,
+          isNativeReady: true,
         ),
       ],
     ),
