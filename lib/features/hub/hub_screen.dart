@@ -16,7 +16,6 @@ import '../quick/docs_screen.dart';
 import '../quick/henkaten_board_screen.dart';
 import '../quick/postit_board_screen.dart';
 import '../quick/ubdrive_screen.dart';
-import '../monitor/monitor_tv_screen.dart';
 import 'display_board_screen.dart';
 import '../productivity/after_prod_screen.dart';
 import '../productivity/task_hub_screen.dart';
@@ -898,42 +897,13 @@ class _HubScreenState extends State<HubScreen> {
   }
 
   Widget _buildTopMenuCards(double width) {
-    final displayCard = _TopActionCard(
+    return _TopActionCard(
       title: 'Display',
       subtitle: 'Display KPI · GL Management Board',
       badge: '7 Pilar · 28 Board',
       icon: Icons.monitor_rounded,
       gradient: const [Color(0xFF0284C7), Color(0xFF4F46E5)],
       onTap: _openDisplayBoard,
-    );
-
-    final monitorCard = _TopActionCard(
-      title: 'Monitor',
-      subtitle: 'Monitor Display · Slide Show TV',
-      badge: 'Shopfloor TV',
-      icon: Icons.slideshow_rounded,
-      gradient: const [Color(0xFF059669), Color(0xFF0891B2)],
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => const MonitorTvScreen()),
-      ),
-    );
-
-    if (width >= 560) {
-      return Row(
-        children: [
-          Expanded(child: displayCard),
-          const SizedBox(width: 12),
-          Expanded(child: monitorCard),
-        ],
-      );
-    }
-
-    return Column(
-      children: [
-        displayCard,
-        const SizedBox(height: 10),
-        monitorCard,
-      ],
     );
   }
 

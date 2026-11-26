@@ -17,9 +17,9 @@ Dokumen ini menjadi acuan resmi migrasi 1:1 dari `ubnetwork` (Next.js Web) ke `u
 | :--- | :--- | :--- | :--- |
 | `/` (Home Hub) | Top Bar macOS, Display & Monitor, 6 Pilar `SQPCEHR`, 5 Kaizen, 11 Quick App | **Selesai (1:1)** | `lib/features/hub/hub_screen.dart` |
 | `/display` (GL Board Hub) | 7 Pilar × 4 Kertas KPI (28 board) | **28 / 28 Native** | `lib/features/display/display_paper_screen.dart` |
-| `/monitor` (Slide Show TV) | Deck Plant, Welcome QAE, Safety Patrol | **Selesai (1:1)** | `lib/features/monitor/monitor_tv_screen.dart` |
+| `/monitor` (Slide Show TV) | Khusus TV Display Web Next.js | **Dihapus dari APK** | Tidak dipakai di mobile APK (khusus TV shopfloor) |
 | `/productivity` | 14 modul | **14 / 14 Native** | **Selesai 100%** |
-| `/safety` | 8 modul | **8 / 8 Native** | **Selesai 100%** (6 operasional + 2 Display/Slide) |
+| `/safety` | 7 modul APK | **7 / 7 Native** | **Selesai 100%** (6 operasional + 1 Display Proses KPI) |
 | `/quality` | 6 modul | **6 / 6 Native** | **Selesai 100%** (2 operasional + 4 Display KPI) |
 | `/cost` | 6 modul | **6 / 6 Native** | **Selesai 100%** (2 operasional + 4 Display KPI) |
 | `/env` | 7 modul | **7 / 7 Native** | **Selesai 100%** (3 operasional + 4 Display KPI) |
@@ -66,7 +66,7 @@ Dokumen ini menjadi acuan resmi migrasi 1:1 dari `ubnetwork` (Next.js Web) ke `u
 
 ### Fase 6 — Display KPI 16:9 (`/display`) & Monitor (`/monitor`) — **SELESAI 100%**
 - [x] **6.1** Kertas `Main KPI`, `Sub KPI`, `Proses KPI`, `Kaizen` (7 Pilar × 4 Kertas = 28 Board Live Offline-First, Zoomable)
-- [x] **6.2** `/monitor` — Slide Show TV Shopfloor (Deck Plant, Welcome QAE, Safety Patrol, Auto-Play, Live Clock, Fullscreen)
+- [x] **6.2** `/monitor` — Dihapus dari APK (khusus TV Display Next.js)
 
 ### Fase 7 — Quick App Dx & Aktivitas Kaizen — **SELESAI 100%**
 - [x] **7.1** Henkaten Board, Post-It Board, UBdrive, Dokumentasi

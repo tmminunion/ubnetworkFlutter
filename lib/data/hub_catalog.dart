@@ -543,17 +543,6 @@ class HubCatalog {
           icon: Icons.verified_user_rounded,
           isNativeReady: true,
         ),
-        SubModuleItem(
-          id: 'patrol-slide',
-          title: 'Safety Patrol Monitor Slide',
-          desc: 'Slide show presentasi Safety Patrol (Welcome & Hotline #sub) untuk tampilan layar TV shopfloor.',
-          route: '/monitor?id=deck_mwbf55dj_yqye',
-          badge: 'Slide Show TV',
-          gradient: [Color(0xFF0EA5E9), Color(0xFF2563EB)],
-          accentColor: Color(0xFF38BDF8),
-          icon: Icons.slideshow_rounded,
-          isNativeReady: true,
-        ),
       ],
     ),
     'quality': const SubHubConfig(

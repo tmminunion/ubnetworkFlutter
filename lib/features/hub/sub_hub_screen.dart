@@ -32,7 +32,6 @@ import '../safety/safety_device_screen.dart';
 import '../safety/safety_kpi_screen.dart';
 import '../safety/sga_group_screen.dart';
 import '../display/display_paper_screen.dart';
-import '../monitor/monitor_tv_screen.dart';
 import 'display_board_screen.dart';
 
 class SubHubScreen extends StatelessWidget {
@@ -283,14 +282,6 @@ class SubHubScreen extends StatelessWidget {
       return;
     }
 
-    if (mod.route.startsWith('/monitor')) {
-      final uri = Uri.tryParse(mod.route);
-      final deckId = uri?.queryParameters['id'] ?? 'main';
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => MonitorTvScreen(initialDeckId: deckId)),
-      );
-      return;
-    }
 
     showModalBottomSheet<void>(
       context: context,

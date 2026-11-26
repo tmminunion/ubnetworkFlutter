@@ -15,18 +15,5 @@ void main() {
         }
       }
     });
-
-    test('buildDecks creates Plant, Welcome QAE, and Safety Patrol slide decks with live counters', () {
-      final decks = DisplayMonitorCatalog.buildDecks(
-        localChecksheets: 12,
-        openSafetyFindings: 3,
-        totalKaizen: 8,
-        lineName: 'UB ASSY',
-      );
-      expect(decks.length, 3);
-      expect(decks.first.id, 'main');
-      expect(decks.first.slides.length, greaterThanOrEqualTo(3));
-      expect(decks.any((d) => d.id == 'deck_mwbf55dj_yqye'), isTrue);
-    });
   });
 }
