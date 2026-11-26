@@ -84,3 +84,39 @@ jobs:
           tag_name: v${{ steps.meta.outputs.version_name }}+${{ steps.meta.outputs.version_code }}
           name: UBnetwork v${{ steps.meta.outputs.version_name }} (Build ${{ steps.meta.outputs.version_code }})
           files: UBnetwork-v${{ steps.meta.outputs.version_name }}-code${{ steps.meta.outputs.version_code }}-release.apk
+
+      - name: Send APK Link to Telegram
+        if: always()
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          APK_FILE: "UBnetwork-v${{ steps.meta.outputs.version_name }}-code${{ steps.meta.outputs.version_code }}-release.apk"
+          RELEASE_URL: "https://github.com/${{ github.repository }}/releases/tag/v${{ steps.meta.outputs.version_name }}+${{ steps.meta.outputs.version_code }}"
+        run: |
+          if [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ]; then
+            echo "Secret Telegram belum diset; melewati notifikasi."
+            exit 0
+          fi
+
+          if [ -f "$APK_FILE" ]; then
+            SIZE_MB=$(awk "BEGIN {printf \"%.2f\", $(wc -c < "$APK_FILE")/1048576}")
+            MSG=$(printf "🚀 UBnetwork Flutter v${{ steps.meta.outputs.version_name }} (Build ${{ steps.meta.outputs.version_code }}) berhasil dibuild!\n📦 File: %s (%s MB)\n📥 Release: %s" "${APK_FILE}" "${SIZE_MB}" "${RELEASE_URL}")
+          else
+            MSG="❌ Build UBnetwork Flutter v${{ steps.meta.outputs.version_name }} (Build ${{ steps.meta.outputs.version_code }}) gagal menghasilkan file APK."
+          fi
+
+          curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${CHAT_ID}" \
+            --data-urlencode "text=${MSG}" \
+            --data-urlencode "disable_web_page_preview=true" > /dev/null
+
+      - name: Cleanup Temporary Files & Workflow Artifacts
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          rm -rf build android /tmp/ubnet_tpl *.apk
+          ARTIFACT_IDS=$(gh api "repos/${{ github.repository }}/actions/artifacts?per_page=100" --jq '.artifacts[].id' 2>/dev/null || true)
+          for AID in $ARTIFACT_IDS; do
+            gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/${AID}" >/dev/null 2>&1 || true
+          done
