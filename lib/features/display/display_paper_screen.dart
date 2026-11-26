@@ -6,7 +6,6 @@ import '../../data/hub_catalog.dart';
 import '../../models/checksheet_models.dart';
 import '../../models/cost_env_models.dart';
 import '../../models/display_monitor_models.dart';
-import '../../models/hr_morale_models.dart';
 import '../../services/cost_env_store.dart';
 import '../../services/hr_morale_store.dart';
 import '../../services/local_store.dart';
@@ -220,9 +219,9 @@ class _DisplayPaperScreenState extends State<DisplayPaperScreen> {
         final day = int.tryParse(r.tanggal.split('-').last) ?? 0;
         if (r.tanggal.startsWith(_ym) && day >= 1 && day <= 31) {
           if (r.shift == 'RED') {
-            dRed[day - 1] = st.internalEfficiency.toDouble();
+            dRed[day - 1] = double.tryParse(st.internalEfficiency);
           } else {
-            dWhite[day - 1] = st.internalEfficiency.toDouble();
+            dWhite[day - 1] = double.tryParse(st.internalEfficiency);
           }
         }
         for (final s in r.slots) {
