@@ -1,5 +1,7 @@
 # Kebijakan Privasi — UBnetwork
 
+> Versi web resmi (URL untuk Google Play): **https://ubnetwork.vercel.app/privacy**
+
 **Terakhir diperbarui:** 26 November 2026
 
 **UBnetwork** adalah aplikasi Android offline-first untuk pencatatan **Daily Production Checksheet (Kanvas A3)** di lingkungan produksi Underbody Assy PT. TMMIN.

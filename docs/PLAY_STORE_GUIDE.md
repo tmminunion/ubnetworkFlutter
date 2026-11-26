@@ -42,7 +42,7 @@ Semua kebutuhan teknis build & signing untuk Google Play Store sudah disiapkan o
 3. Di menu **App integrity**, aktifkan **Play App Signing** (default Google Play).
 4. Isi **Store listing** menggunakan aset di `assets/playstore/` dan screenshot layar HP (minimal 2 screenshot).
 5. Isi **App content**:
-   - **Privacy Policy:** tautkan ke `docs/PRIVACY_POLICY.md` (atau halaman web privacy policy).
+   - **Privacy Policy:** isi dengan URL publik `https://ubnetwork.vercel.app/privacy` (halaman web, bisa dibuka tanpa login).
    - **Ads:** No, my app does not contain ads.
    - **Data safety:** Offline storage lokal + optional HTTPS sync internal; tidak dibagikan ke pihak ketiga.
 6. Upload file `.aab` ke track **Internal testing** / **Closed testing** / **Production**, lalu klik **Review & roll out**.
