@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 import '../../core/theme.dart';
@@ -8,22 +6,22 @@ import '../../models/checksheet_models.dart';
 import '../../services/auth_service.dart';
 import '../../services/local_store.dart';
 import '../checksheet/checksheet_screen.dart';
-import '../kaizen/five_r_screen.dart';
-import '../kaizen/qcc_screen.dart';
-import '../kaizen/sw_observasi_screen.dart';
-import '../kaizen/tpm_screen.dart';
-import '../quick/docs_screen.dart';
-import '../quick/henkaten_board_screen.dart';
-import '../quick/postit_board_screen.dart';
-import '../quick/ubdrive_screen.dart';
-import 'display_board_screen.dart';
-import '../productivity/after_prod_screen.dart';
-import '../productivity/task_hub_screen.dart';
 import '../env/env_daily_screen.dart';
 import '../env/env_temuan_screen.dart';
 import '../hr/bacadoa_screen.dart';
 import '../hr/idnu_screen.dart';
+import '../kaizen/five_r_screen.dart';
+import '../kaizen/qcc_screen.dart';
+import '../kaizen/sw_observasi_screen.dart';
+import '../kaizen/tpm_screen.dart';
+import '../productivity/after_prod_screen.dart';
+import '../productivity/task_hub_screen.dart';
+import '../quick/docs_screen.dart';
+import '../quick/henkaten_board_screen.dart';
+import '../quick/postit_board_screen.dart';
+import '../quick/ubdrive_screen.dart';
 import '../safety/sga_group_screen.dart';
+import 'display_board_screen.dart';
 import 'sub_hub_screen.dart';
 
 class HubScreen extends StatefulWidget {
@@ -44,36 +42,13 @@ class _HubScreenState extends State<HubScreen> {
   UbSettings _cfg = UbSettings();
   List<ChecksheetReport> _reports = const [];
   bool _loading = true;
-  bool _gridMode = true;
   bool _pillarsCollapsed = false;
   bool _kaizenCollapsed = false;
-  String _searchQuery = '';
-  String _clockWib = '--:--';
-  Timer? _clockTimer;
-  final TextEditingController _searchCtrl = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _updateClock();
-    _clockTimer = Timer.periodic(const Duration(seconds: 20), (_) => _updateClock());
     _load();
-  }
-
-  @override
-  void dispose() {
-    _clockTimer?.cancel();
-    _searchCtrl.dispose();
-    super.dispose();
-  }
-
-  void _updateClock() {
-    final wib = DateTime.now().toUtc().add(const Duration(hours: 7));
-    final hh = wib.hour.toString().padLeft(2, '0');
-    final mm = wib.minute.toString().padLeft(2, '0');
-    if (mounted) {
-      setState(() => _clockWib = '$hh:$mm');
-    }
   }
 
   Future<void> _load() async {
@@ -124,93 +99,63 @@ class _HubScreenState extends State<HubScreen> {
     required Color color,
   }) {
     if (route == '/safety/group') {
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => const SgaGroupScreen()),
-      );
+      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const SgaGroupScreen()));
       return;
     }
     if (route == '/qcc') {
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => const QccScreen()),
-      );
+      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const QccScreen()));
       return;
     }
     if (route == '/tpm') {
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => const TpmScreen()),
-      );
+      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const TpmScreen()));
       return;
     }
     if (route == '/5r') {
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => const FiveRScreen()),
-      );
+      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const FiveRScreen()));
       return;
     }
     if (route == '/sw') {
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => const SwObservasiScreen()),
-      );
+      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const SwObservasiScreen()));
       return;
     }
     if (route == '/henkaten') {
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => const HenkatenBoardScreen()),
-      );
+      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const HenkatenBoardScreen()));
       return;
     }
     if (route == '/postit') {
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => const PostitBoardScreen()),
-      );
+      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const PostitBoardScreen()));
       return;
     }
     if (route == '/ubdrive') {
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => const UbdriveScreen()),
-      );
+      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const UbdriveScreen()));
       return;
     }
     if (route == '/docs') {
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => const DocsScreen()),
-      );
+      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const DocsScreen()));
       return;
     }
     if (route == '/productivity/tasks') {
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => const TaskHubScreen()),
-      );
+      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const TaskHubScreen()));
       return;
     }
     if (route == '/productivity/after-prod') {
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => const AfterProdScreen()),
-      );
+      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const AfterProdScreen()));
       return;
     }
     if (route == '/env/daily') {
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => const EnvDailyScreen()),
-      );
+      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const EnvDailyScreen()));
       return;
     }
     if (route == '/env/temuan') {
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => const EnvTemuanScreen()),
-      );
+      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const EnvTemuanScreen()));
       return;
     }
     if (route == '/bacadoa') {
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => const BacaDoaScreen()),
-      );
+      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const BacaDoaScreen()));
       return;
     }
     if (route == '/idnu') {
-      Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => const IdnuScreen()),
-      );
+      Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => const IdnuScreen()));
       return;
     }
 
@@ -257,20 +202,6 @@ class _HubScreenState extends State<HubScreen> {
                   ),
                 ),
               ],
-            ),
-            const SizedBox(height: 14),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: UbColors.bg,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.white12),
-              ),
-              child: Text(
-                'Route: $route · Modul ini akan dibuka penuh saat migrasi native tahap berikutnya.',
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 11, color: UbColors.textMuted, height: 1.4),
-              ),
             ),
             const SizedBox(height: 16),
             SizedBox(
@@ -496,70 +427,40 @@ class _HubScreenState extends State<HubScreen> {
     }
   }
 
-  bool _matchesSearch(String a, String b, [String c = '']) {
-    if (_searchQuery.isEmpty) return true;
-    final q = _searchQuery.toLowerCase();
-    return a.toLowerCase().contains(q) || b.toLowerCase().contains(q) || c.toLowerCase().contains(q);
-  }
-
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
-    final uph = _cfg.taktTime > 0 ? (60 / _cfg.taktTime).round() : 25;
     final pendingCount = _reports.where((r) => r.syncStatus != 'synced').length;
 
-    final filteredPillars = HubCatalog.kpiPillars
-        .where((p) => _matchesSearch(p.title, p.subtitle, '${p.code} ${p.highlight}'))
-        .toList();
-    final filteredKaizen = HubCatalog.kaizenActivities
-        .where((k) => _matchesSearch(k.title, k.subtitle, '${k.code} ${k.highlight}'))
-        .toList();
-    final filteredQuick = HubCatalog.quickApps
-        .where((q) => _matchesSearch(q.title, q.subtitle, q.route))
-        .toList();
-
-    final pillarCols = !_gridMode ? 1 : (width >= 960 ? 3 : (width >= 600 ? 2 : 2));
-    final kaizenCols = !_gridMode ? 1 : (width >= 1020 ? 5 : (width >= 680 ? 3 : 2));
+    final pillarCols = width >= 960 ? 3 : 2;
+    final kaizenCols = width >= 1020 ? 5 : (width >= 680 ? 3 : 2);
     final quickCols = width >= 960 ? 4 : (width >= 600 ? 3 : 2);
 
     return Scaffold(
       backgroundColor: UbColors.bg,
       body: Stack(
         children: [
-          // macOS ambient dark wallpaper glows
           Positioned(
             top: -110,
             left: -90,
-            child: Container(
-              width: 300,
-              height: 300,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: const Color(0xFF0EA5E9).withValues(alpha: 0.14),
-              ),
-            ),
-          ),
-          Positioned(
-            top: 260,
-            right: -120,
-            child: Container(
-              width: 320,
-              height: 320,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: const Color(0xFF6366F1).withValues(alpha: 0.12),
-              ),
-            ),
-          ),
-          Positioned(
-            bottom: -100,
-            left: 40,
             child: Container(
               width: 280,
               height: 280,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: const Color(0xFF10B981).withValues(alpha: 0.1),
+                color: const Color(0xFF0EA5E9).withValues(alpha: 0.12),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: -100,
+            right: -60,
+            child: Container(
+              width: 260,
+              height: 260,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: const Color(0xFF10B981).withValues(alpha: 0.09),
               ),
             ),
           ),
@@ -568,136 +469,104 @@ class _HubScreenState extends State<HubScreen> {
             child: Column(
               children: [
                 // =========================================================
-                // 1. TOP macOS STATUS BAR
+                // 1. SIMPLE COMPACT HEADER BAR
                 // =========================================================
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: UbColors.bg.withValues(alpha: 0.86),
-                    border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.1))),
+                    color: UbColors.bg.withValues(alpha: 0.9),
+                    border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
                   ),
                   child: Row(
                     children: [
-                      // UB Logo
                       Container(
-                        width: 30,
-                        height: 30,
+                        width: 28,
+                        height: 28,
                         decoration: BoxDecoration(
                           gradient: const LinearGradient(
                             colors: [Color(0xFF06B6D4), Color(0xFF2563EB)],
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                           ),
-                          borderRadius: BorderRadius.circular(9),
-                          border: Border.all(color: Colors.white24),
+                          borderRadius: BorderRadius.circular(8),
                         ),
                         alignment: Alignment.center,
-                        child: const Text('UB', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.white)),
+                        child: const Text('UB', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: Colors.white)),
                       ),
                       const SizedBox(width: 8),
-                      const Text(
-                        'UBnetwork',
-                        style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: -0.2),
-                      ),
-                      const SizedBox(width: 8),
-                      // Live TT Pill
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: UbColors.emerald.withValues(alpha: 0.14),
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(color: UbColors.emerald.withValues(alpha: 0.35)),
-                        ),
+                      Expanded(
                         child: Row(
-                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            Container(
-                              width: 6,
-                              height: 6,
-                              decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF34D399)),
+                            const Text(
+                              'UBnetwork',
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Colors.white),
                             ),
-                            const SizedBox(width: 5),
-                            Text(
-                              'TT: ${_cfg.taktTime}m ($uph UPH)',
-                              style: const TextStyle(fontFamily: 'monospace', fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF6EE7B7)),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                '· ${_cfg.lineName}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: UbColors.textMuted),
+                              ),
                             ),
                           ],
                         ),
                       ),
-                      const Spacer(),
-                      if (width >= 430)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: Text(
-                            '$_clockWib WIB',
-                            style: const TextStyle(fontFamily: 'monospace', fontSize: 11, fontWeight: FontWeight.w700, color: UbColors.textMuted),
-                          ),
-                        ),
-                      // Local Checksheet History Badge
                       InkWell(
                         onTap: _openLocalHistorySheet,
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(9),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
                           decoration: BoxDecoration(
                             color: Colors.white.withValues(alpha: 0.06),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                            borderRadius: BorderRadius.circular(9),
+                            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(
-                                Icons.inventory_2_rounded,
-                                size: 14,
-                                color: pendingCount > 0 ? UbColors.amber : UbColors.cyan,
-                              ),
+                              Icon(Icons.inventory_2_rounded, size: 13, color: pendingCount > 0 ? UbColors.amber : UbColors.cyan),
                               const SizedBox(width: 4),
-                              Text(
-                                '${_reports.length}',
-                                style: const TextStyle(fontFamily: 'monospace', fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white),
-                              ),
+                              Text('${_reports.length}', style: const TextStyle(fontFamily: 'monospace', fontSize: 10.5, fontWeight: FontWeight.w800, color: Colors.white)),
                             ],
                           ),
                         ),
                       ),
-                      const SizedBox(width: 6),
+                      const SizedBox(width: 5),
                       InkWell(
                         onTap: _openSettings,
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(9),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
                           decoration: BoxDecoration(
-                            color: UbColors.purple.withValues(alpha: 0.18),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: UbColors.purple.withValues(alpha: 0.45)),
+                            color: UbColors.purple.withValues(alpha: 0.16),
+                            borderRadius: BorderRadius.circular(9),
+                            border: Border.all(color: UbColors.purple.withValues(alpha: 0.4)),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text(
-                                _cfg.role,
-                                style: const TextStyle(fontFamily: 'monospace', fontSize: 10, fontWeight: FontWeight.w900, color: Color(0xFFD8B4FE)),
-                              ),
-                              const SizedBox(width: 4),
-                              const Icon(Icons.settings_rounded, size: 13, color: Color(0xFFD8B4FE)),
+                              Text(_cfg.role, style: const TextStyle(fontFamily: 'monospace', fontSize: 9.5, fontWeight: FontWeight.w900, color: Color(0xFFD8B4FE))),
+                              const SizedBox(width: 3),
+                              const Icon(Icons.settings_rounded, size: 12, color: Color(0xFFD8B4FE)),
                             ],
                           ),
                         ),
                       ),
                       if (widget.onLogout != null) ...[
-                        const SizedBox(width: 6),
+                        const SizedBox(width: 5),
                         InkWell(
                           onTap: widget.onLogout,
-                          borderRadius: BorderRadius.circular(10),
+                          borderRadius: BorderRadius.circular(9),
                           child: Container(
-                            padding: const EdgeInsets.all(6),
+                            padding: const EdgeInsets.all(5),
                             decoration: BoxDecoration(
                               color: UbColors.rose.withValues(alpha: 0.14),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: UbColors.rose.withValues(alpha: 0.4)),
+                              borderRadius: BorderRadius.circular(9),
+                              border: Border.all(color: UbColors.rose.withValues(alpha: 0.35)),
                             ),
-                            child: const Icon(Icons.logout_rounded, size: 14, color: Color(0xFFFDA4AF)),
+                            child: const Icon(Icons.logout_rounded, size: 13, color: Color(0xFFFDA4AF)),
                           ),
                         ),
                       ],
@@ -706,7 +575,7 @@ class _HubScreenState extends State<HubScreen> {
                 ),
 
                 // =========================================================
-                // 2. MAIN SCROLLABLE HUB WORKSPACE
+                // 2. COMPACT MAIN WORKSPACE
                 // =========================================================
                 Expanded(
                   child: _loading
@@ -714,83 +583,80 @@ class _HubScreenState extends State<HubScreen> {
                       : RefreshIndicator(
                           onRefresh: _load,
                           child: ListView(
-                            padding: const EdgeInsets.fromLTRB(14, 14, 14, 28),
+                            padding: const EdgeInsets.fromLTRB(12, 10, 12, 22),
                             children: [
-                              // TOP DESKTOP STATUS & SEARCH BAR
-                              _buildDesktopSearchBar(),
-                              const SizedBox(height: 14),
-
-                              // MENU UTAMA (TOP 2 CARDS: DISPLAY KPI & MONITOR)
-                              _buildTopMenuCards(width),
-                              const SizedBox(height: 16),
+                              // DISPLAY KPI BANNER
+                              _TopActionCard(
+                                title: 'Display KPI',
+                                subtitle: 'GL Management Board · 7 Pilar × 4 Kertas',
+                                badge: '28 Board',
+                                icon: Icons.monitor_rounded,
+                                gradient: const [Color(0xFF0284C7), Color(0xFF4F46E5)],
+                                onTap: _openDisplayBoard,
+                              ),
+                              const SizedBox(height: 10),
 
                               // WINDOW 1: 6 PILAR UTAMA MANUFAKTUR (S-Q-P-C-HR-E)
-                              _MacWindowContainer(
-                                title: '6 Pilar Utama Manufaktur (S - Q - P - C - HR - E)',
-                                subtitle: '${filteredPillars.length} Pilar KPI',
+                              _CompactSectionContainer(
+                                title: '6 Pilar Manufaktur (S-Q-P-C-HR-E)',
+                                subtitle: '${HubCatalog.kpiPillars.length} Pilar',
                                 dotColor: UbColors.cyan,
                                 collapsed: _pillarsCollapsed,
                                 onToggleCollapse: () => setState(() => _pillarsCollapsed = !_pillarsCollapsed),
-                                child: filteredPillars.isEmpty
-                                    ? _emptySearchState()
-                                    : GridView.builder(
-                                        shrinkWrap: true,
-                                        physics: const NeverScrollableScrollPhysics(),
-                                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                                          crossAxisCount: pillarCols,
-                                          crossAxisSpacing: 10,
-                                          mainAxisSpacing: 10,
-                                          mainAxisExtent: _gridMode ? 150 : 94,
-                                        ),
-                                        itemCount: filteredPillars.length,
-                                        itemBuilder: (_, idx) => _PillarCard(
-                                          item: filteredPillars[idx],
-                                          compactRow: !_gridMode,
-                                          onTap: () => _openSubHub(filteredPillars[idx].id),
-                                        ),
-                                      ),
+                                child: GridView.builder(
+                                  shrinkWrap: true,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: pillarCols,
+                                    crossAxisSpacing: 8,
+                                    mainAxisSpacing: 8,
+                                    mainAxisExtent: 122,
+                                  ),
+                                  itemCount: HubCatalog.kpiPillars.length,
+                                  itemBuilder: (_, idx) => _PillarCard(
+                                    item: HubCatalog.kpiPillars[idx],
+                                    onTap: () => _openSubHub(HubCatalog.kpiPillars[idx].id),
+                                  ),
+                                ),
                               ),
-                              const SizedBox(height: 16),
+                              const SizedBox(height: 10),
 
                               // WINDOW 2: AKTIVITAS KAIZEN (SGA, QCC, TPM, 5R, SW)
-                              _MacWindowContainer(
-                                title: 'Aktivitas Kaizen & Budaya Kerja',
-                                subtitle: '${filteredKaizen.length} Aktivitas',
+                              _CompactSectionContainer(
+                                title: 'Aktivitas Kaizen',
+                                subtitle: '${HubCatalog.kaizenActivities.length} Menu',
                                 dotColor: UbColors.amber,
                                 collapsed: _kaizenCollapsed,
                                 onToggleCollapse: () => setState(() => _kaizenCollapsed = !_kaizenCollapsed),
-                                child: filteredKaizen.isEmpty
-                                    ? _emptySearchState()
-                                    : GridView.builder(
-                                        shrinkWrap: true,
-                                        physics: const NeverScrollableScrollPhysics(),
-                                        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                                          crossAxisCount: kaizenCols,
-                                          crossAxisSpacing: 10,
-                                          mainAxisSpacing: 10,
-                                          mainAxisExtent: _gridMode ? 142 : 90,
-                                        ),
-                                        itemCount: filteredKaizen.length,
-                                        itemBuilder: (_, idx) {
-                                          final k = filteredKaizen[idx];
-                                          return _PillarCard(
-                                            item: k,
-                                            compactRow: !_gridMode,
-                                            onTap: () => _showRoutePreview(
-                                              title: '${k.title} (${k.subtitle})',
-                                              subtitle: k.highlight,
-                                              route: k.route,
-                                              icon: k.icon,
-                                              color: k.accentColor,
-                                            ),
-                                          );
-                                        },
+                                child: GridView.builder(
+                                  shrinkWrap: true,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: kaizenCols,
+                                    crossAxisSpacing: 8,
+                                    mainAxisSpacing: 8,
+                                    mainAxisExtent: 116,
+                                  ),
+                                  itemCount: HubCatalog.kaizenActivities.length,
+                                  itemBuilder: (_, idx) {
+                                    final k = HubCatalog.kaizenActivities[idx];
+                                    return _PillarCard(
+                                      item: k,
+                                      onTap: () => _showRoutePreview(
+                                        title: '${k.title} (${k.subtitle})',
+                                        subtitle: k.highlight,
+                                        route: k.route,
+                                        icon: k.icon,
+                                        color: k.accentColor,
                                       ),
+                                    );
+                                  },
+                                ),
                               ),
-                              const SizedBox(height: 16),
+                              const SizedBox(height: 10),
 
                               // SECTION 3: UB QUICK APP DX
-                              _buildQuickAppsSection(filteredQuick, quickCols),
+                              _buildQuickAppsSection(HubCatalog.quickApps, quickCols),
                             ],
                           ),
                         ),
@@ -803,117 +669,13 @@ class _HubScreenState extends State<HubScreen> {
     );
   }
 
-  Widget _buildDesktopSearchBar() {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: UbColors.surface.withValues(alpha: 0.72),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Underbody Display — ${_cfg.lineName}',
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Colors.white),
-                    ),
-                    const SizedBox(height: 2),
-                    const Text(
-                      'Display Center dan Aktivitas Manufaktur',
-                      style: TextStyle(fontSize: 11.5, color: UbColors.textMuted),
-                    ),
-                  ],
-                ),
-              ),
-              // Grid / List Toggle
-              Container(
-                decoration: BoxDecoration(
-                  color: UbColors.bg,
-                  borderRadius: BorderRadius.circular(11),
-                  border: Border.all(color: Colors.white12),
-                ),
-                child: Row(
-                  children: [
-                    IconButton(
-                      visualDensity: VisualDensity.compact,
-                      onPressed: () => setState(() => _gridMode = true),
-                      icon: Icon(Icons.grid_view_rounded, size: 18, color: _gridMode ? UbColors.cyan : UbColors.textMuted),
-                    ),
-                    IconButton(
-                      visualDensity: VisualDensity.compact,
-                      onPressed: () => setState(() => _gridMode = false),
-                      icon: Icon(Icons.view_list_rounded, size: 18, color: !_gridMode ? UbColors.cyan : UbColors.textMuted),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          TextField(
-            controller: _searchCtrl,
-            onChanged: (v) => setState(() => _searchQuery = v.trim()),
-            style: const TextStyle(fontSize: 13, color: Colors.white),
-            decoration: InputDecoration(
-              hintText: 'Cari pilar SQPCEHR, Kaizen, atau Quick App...',
-              hintStyle: const TextStyle(fontSize: 12.5, color: UbColors.textMuted),
-              prefixIcon: const Icon(Icons.search_rounded, size: 18, color: UbColors.textMuted),
-              suffixIcon: _searchQuery.isNotEmpty
-                  ? IconButton(
-                      onPressed: () {
-                        _searchCtrl.clear();
-                        setState(() => _searchQuery = '');
-                      },
-                      icon: const Icon(Icons.close_rounded, size: 16, color: UbColors.textMuted),
-                    )
-                  : null,
-              filled: true,
-              fillColor: UbColors.bg.withValues(alpha: 0.75),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(13),
-                borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(13),
-                borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(13),
-                borderSide: const BorderSide(color: UbColors.cyan),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTopMenuCards(double width) {
-    return _TopActionCard(
-      title: 'Display',
-      subtitle: 'Display KPI · GL Management Board',
-      badge: '7 Pilar · 28 Board',
-      icon: Icons.monitor_rounded,
-      gradient: const [Color(0xFF0284C7), Color(0xFF4F46E5)],
-      onTap: _openDisplayBoard,
-    );
-  }
-
   Widget _buildQuickAppsSection(List<QuickAppItem> items, int cols) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(11),
       decoration: BoxDecoration(
         color: UbColors.surface.withValues(alpha: 0.72),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.09)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -923,16 +685,16 @@ class _HubScreenState extends State<HubScreen> {
             children: [
               const Row(
                 children: [
-                  Icon(Icons.apps_rounded, size: 17, color: UbColors.cyan),
-                  SizedBox(width: 8),
-                  Text('UB Quick App Dx', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Colors.white)),
+                  Icon(Icons.apps_rounded, size: 15, color: UbColors.cyan),
+                  SizedBox(width: 6),
+                  Text('UB Quick App Dx', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Colors.white)),
                 ],
               ),
               InkWell(
                 onTap: () => _openChecksheet(),
                 borderRadius: BorderRadius.circular(999),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
                   decoration: BoxDecoration(
                     color: UbColors.cyan.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(999),
@@ -940,93 +702,80 @@ class _HubScreenState extends State<HubScreen> {
                   ),
                   child: const Text(
                     '⚡ Checksheet A3',
-                    style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: UbColors.cyan),
+                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: UbColors.cyan),
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          if (items.isEmpty)
-            _emptySearchState()
-          else
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: cols,
-                crossAxisSpacing: 8,
-                mainAxisSpacing: 8,
-                mainAxisExtent: 74,
-              ),
-              itemCount: items.length,
-              itemBuilder: (_, idx) {
-                final q = items[idx];
-                return InkWell(
-                  onTap: () => _showRoutePreview(
-                    title: q.title,
-                    subtitle: q.subtitle,
-                    route: q.route,
-                    icon: q.icon,
-                    color: q.color,
-                  ),
-                  borderRadius: BorderRadius.circular(14),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: UbColors.bg.withValues(alpha: 0.72),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 34,
-                          height: 34,
-                          decoration: BoxDecoration(
-                            color: q.color.withValues(alpha: 0.16),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Icon(q.icon, size: 18, color: q.color),
-                        ),
-                        const SizedBox(width: 9),
-                        Expanded(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                q.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.white),
-                              ),
-                              const SizedBox(height: 1),
-                              Text(
-                                q.subtitle,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 10, color: UbColors.textMuted),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
+          const SizedBox(height: 9),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: cols,
+              crossAxisSpacing: 7,
+              mainAxisSpacing: 7,
+              mainAxisExtent: 64,
             ),
+            itemCount: items.length,
+            itemBuilder: (_, idx) {
+              final q = items[idx];
+              return InkWell(
+                onTap: () => _showRoutePreview(
+                  title: q.title,
+                  subtitle: q.subtitle,
+                  route: q.route,
+                  icon: q.icon,
+                  color: q.color,
+                ),
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: UbColors.bg.withValues(alpha: 0.72),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 30,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color: q.color.withValues(alpha: 0.16),
+                          borderRadius: BorderRadius.circular(9),
+                        ),
+                        child: Icon(q.icon, size: 16, color: q.color),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              q.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Colors.white),
+                            ),
+                            Text(
+                              q.subtitle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 9.5, color: UbColors.textMuted),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
         ],
-      ),
-    );
-  }
-
-  Widget _emptySearchState() {
-    return const Padding(
-      padding: EdgeInsets.symmetric(vertical: 18),
-      child: Center(
-        child: Text('Tidak ada item yang cocok dengan pencarian.', style: TextStyle(fontSize: 12, color: UbColors.textMuted)),
       ),
     );
   }
@@ -1053,67 +802,58 @@ class _TopActionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(16),
       child: Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
         decoration: BoxDecoration(
           gradient: LinearGradient(
             colors: gradient,
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(color: Colors.white24),
-          boxShadow: [
-            BoxShadow(
-              color: gradient.first.withValues(alpha: 0.28),
-              blurRadius: 16,
-              offset: const Offset(0, 6),
-            ),
-          ],
         ),
         child: Row(
           children: [
             Container(
-              width: 48,
-              height: 48,
+              width: 38,
+              height: 38,
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: 0.18),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.white24),
+                borderRadius: BorderRadius.circular(11),
               ),
-              child: Icon(icon, color: Colors.white, size: 25),
+              child: Icon(icon, color: Colors.white, size: 21),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      Text(title, style: const TextStyle(fontSize: 16.5, fontWeight: FontWeight.w900, color: Colors.white)),
-                      const SizedBox(width: 8),
+                      Text(title, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900, color: Colors.white)),
+                      const SizedBox(width: 7),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
                         decoration: BoxDecoration(
                           color: Colors.black.withValues(alpha: 0.22),
                           borderRadius: BorderRadius.circular(999),
                         ),
-                        child: Text(badge, style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: Colors.white)),
+                        child: Text(badge, style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: Colors.white)),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 3),
                   Text(
                     subtitle,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.88)),
+                    style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: 0.88)),
                   ),
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right_rounded, color: Colors.white, size: 22),
+            const Icon(Icons.chevron_right_rounded, color: Colors.white, size: 20),
           ],
         ),
       ),
@@ -1121,8 +861,8 @@ class _TopActionCard extends StatelessWidget {
   }
 }
 
-class _MacWindowContainer extends StatelessWidget {
-  const _MacWindowContainer({
+class _CompactSectionContainer extends StatelessWidget {
+  const _CompactSectionContainer({
     required this.title,
     required this.subtitle,
     required this.dotColor,
@@ -1143,65 +883,49 @@ class _MacWindowContainer extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: UbColors.surface.withValues(alpha: 0.72),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.11)),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.09)),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
-          // macOS Window Titlebar
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.04),
-              border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
-            ),
-            child: Row(
-              children: [
-                const _Dot(Color(0xFFFF5F56)),
-                const SizedBox(width: 6),
-                const _Dot(Color(0xFFFFBD2E)),
-                const SizedBox(width: 6),
-                const _Dot(Color(0xFF27C93F)),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: Colors.white),
+          InkWell(
+            onTap: onToggleCollapse,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.03),
+                border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.07))),
+              ),
+              child: Row(
+                children: [
+                  Container(width: 7, height: 7, decoration: BoxDecoration(shape: BoxShape.circle, color: dotColor)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.white),
+                    ),
                   ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: dotColor.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
+                  Text(
                     subtitle,
                     style: TextStyle(fontFamily: 'monospace', fontSize: 10, fontWeight: FontWeight.w700, color: dotColor),
                   ),
-                ),
-                const SizedBox(width: 6),
-                InkWell(
-                  onTap: onToggleCollapse,
-                  borderRadius: BorderRadius.circular(8),
-                  child: Padding(
-                    padding: const EdgeInsets.all(2),
-                    child: Icon(
-                      collapsed ? Icons.expand_more_rounded : Icons.expand_less_rounded,
-                      size: 18,
-                      color: UbColors.textMuted,
-                    ),
+                  const SizedBox(width: 4),
+                  Icon(
+                    collapsed ? Icons.expand_more_rounded : Icons.expand_less_rounded,
+                    size: 16,
+                    color: UbColors.textMuted,
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
           if (!collapsed)
             Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(9),
               child: child,
             ),
         ],
@@ -1210,100 +934,26 @@ class _MacWindowContainer extends StatelessWidget {
   }
 }
 
-class _Dot extends StatelessWidget {
-  const _Dot(this.color);
-
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 10,
-      height: 10,
-      decoration: BoxDecoration(shape: BoxShape.circle, color: color),
-    );
-  }
-}
-
 class _PillarCard extends StatelessWidget {
   const _PillarCard({
     required this.item,
-    required this.compactRow,
     required this.onTap,
   });
 
   final HubPillarItem item;
-  final bool compactRow;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    if (compactRow) {
-      return InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: UbColors.bg.withValues(alpha: 0.72),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.09)),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 46,
-                height: 46,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(colors: item.gradient, begin: Alignment.bottomLeft, end: Alignment.topRight),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                alignment: Alignment.center,
-                child: Text(item.code, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Colors.white)),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(item.title, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900, color: Colors.white)),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: item.accentColor.withValues(alpha: 0.14),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Text(item.badge, style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: item.accentColor)),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 2),
-                    Text(item.subtitle, style: const TextStyle(fontSize: 11.5, color: UbColors.textMuted)),
-                    const SizedBox(height: 2),
-                    Text(item.highlight, style: TextStyle(fontFamily: 'monospace', fontSize: 10.5, fontWeight: FontWeight.w700, color: item.accentColor)),
-                  ],
-                ),
-              ),
-              const Icon(Icons.chevron_right_rounded, color: UbColors.textMuted),
-            ],
-          ),
-        ),
-      );
-    }
-
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(14),
       child: Container(
-        padding: const EdgeInsets.all(13),
+        padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
           color: UbColors.bg.withValues(alpha: 0.72),
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.09)),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1312,53 +962,51 @@ class _PillarCard extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Container(
-                  width: 38,
-                  height: 38,
+                  width: 32,
+                  height: 32,
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: item.gradient,
                       begin: Alignment.bottomLeft,
                       end: Alignment.topRight,
                     ),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white24),
+                    borderRadius: BorderRadius.circular(9),
                   ),
                   alignment: Alignment.center,
                   child: Text(
                     item.code,
-                    style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w900, color: Colors.white),
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Colors.white),
                   ),
                 ),
                 Flexible(
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
                       color: item.accentColor.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: item.accentColor.withValues(alpha: 0.25)),
                     ),
                     child: Text(
                       item.badge,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: item.accentColor),
+                      style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.w800, color: item.accentColor),
                     ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 7),
             Text(
               item.title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900, color: Colors.white),
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Colors.white),
             ),
             Text(
               item.subtitle,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 11, color: UbColors.textMuted),
+              style: const TextStyle(fontSize: 10, color: UbColors.textMuted),
             ),
             const Spacer(),
             Row(
@@ -1368,10 +1016,10 @@ class _PillarCard extends StatelessWidget {
                     item.highlight,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontFamily: 'monospace', fontSize: 10, fontWeight: FontWeight.w700, color: item.accentColor),
+                    style: TextStyle(fontFamily: 'monospace', fontSize: 9.5, fontWeight: FontWeight.w700, color: item.accentColor),
                   ),
                 ),
-                Icon(Icons.arrow_forward_rounded, size: 14, color: item.accentColor),
+                Icon(Icons.arrow_forward_rounded, size: 12, color: item.accentColor),
               ],
             ),
           ],
