@@ -610,7 +610,7 @@ class _HubScreenState extends State<HubScreen> {
                                     crossAxisCount: pillarCols,
                                     crossAxisSpacing: 8,
                                     mainAxisSpacing: 8,
-                                    mainAxisExtent: 122,
+                                    mainAxisExtent: 92,
                                   ),
                                   itemCount: HubCatalog.kpiPillars.length,
                                   itemBuilder: (_, idx) => _PillarCard(
@@ -635,7 +635,7 @@ class _HubScreenState extends State<HubScreen> {
                                     crossAxisCount: kaizenCols,
                                     crossAxisSpacing: 8,
                                     mainAxisSpacing: 8,
-                                    mainAxisExtent: 116,
+                                    mainAxisExtent: 90,
                                   ),
                                   itemCount: HubCatalog.kaizenActivities.length,
                                   itemBuilder: (_, idx) {
@@ -1002,23 +1002,17 @@ class _PillarCard extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Colors.white),
             ),
-            Text(
-              item.subtitle,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 10, color: UbColors.textMuted),
-            ),
-            const Spacer(),
             Row(
               children: [
                 Expanded(
                   child: Text(
-                    item.highlight,
+                    item.subtitle,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontFamily: 'monospace', fontSize: 9.5, fontWeight: FontWeight.w700, color: item.accentColor),
+                    style: const TextStyle(fontSize: 10, color: UbColors.textMuted),
                   ),
                 ),
+                const SizedBox(width: 4),
                 Icon(Icons.arrow_forward_rounded, size: 12, color: item.accentColor),
               ],
             ),
