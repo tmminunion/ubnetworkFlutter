@@ -47,7 +47,7 @@ jobs:
       - name: Bootstrap Android Project
         run: |
           rm -rf android /tmp/ubnet_tpl
-          flutter create /tmp/ubnet_tpl --project-name ubnetwork_flutter --org com.tmmin.ub --platforms=android
+          flutter create /tmp/ubnet_tpl --project-name apps --org com.ubnetwork --platforms=android
           cp -r /tmp/ubnet_tpl/android ./android
           rm -rf /tmp/ubnet_tpl
 

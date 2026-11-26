@@ -4,7 +4,7 @@ Semua kebutuhan teknis build & signing untuk Google Play Store sudah disiapkan o
 
 ## 1. Identitas Aplikasi
 - **App Name:** `UBnetwork`
-- **Package / Application ID:** `com.tmmin.ub.ubnetwork_flutter`
+- **Package / Application ID:** `com.ubnetwork.apps`
 - **Format Rilis Play Store:** `.aab` (Android App Bundle) — otomatis dihasilkan oleh GitHub Actions di setiap push ke `main` dan diunggah ke **GitHub Releases**.
 - **Signing:** Sudah ditandatangani dengan Upload Keystore (`alias: ubnetwork`) melalui GitHub Secrets:
   - `ANDROID_KEYSTORE_BASE64`
