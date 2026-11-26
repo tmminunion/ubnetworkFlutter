@@ -7,7 +7,9 @@ import '../productivity/cbu_monitoring_screen.dart';
 import '../productivity/chokotei_analytics_screen.dart';
 import '../productivity/ckd_monitoring_screen.dart';
 import '../productivity/chokotei_manual_screen.dart';
+import '../productivity/attendance_screen.dart';
 import '../productivity/prod_monitoring_screen.dart';
+import '../productivity/roster_screen.dart';
 import '../quality/quality_daily_screen.dart';
 import '../safety/kyt_monitoring_screen.dart';
 import '../safety/safety_temuan_screen.dart';
@@ -87,6 +89,20 @@ class SubHubScreen extends StatelessWidget {
     if (mod.route == '/safety/temuan') {
       Navigator.of(context).push(
         MaterialPageRoute<void>(builder: (_) => const SafetyTemuanScreen()),
+      );
+      return;
+    }
+
+    if (mod.route == '/productivity/roster') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const RosterScreen()),
+      );
+      return;
+    }
+
+    if (mod.route == '/productivity/absensi') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const AttendanceScreen()),
       );
       return;
     }
