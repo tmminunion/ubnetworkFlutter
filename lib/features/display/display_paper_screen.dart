@@ -35,6 +35,7 @@ class _DisplayPaperScreenState extends State<DisplayPaperScreen> {
   static const double _paperW = 1120;
   static const double _paperH = 792;
 
+  late DisplayPillarItem _pillar;
   late String _rowKey;
   final String _ym = costEnvTodayYmd().substring(0, 7);
   String _subTeam = 'red'; // red | white (1:1 TeamToggle in sub-shared.tsx)
@@ -61,32 +62,30 @@ class _DisplayPaperScreenState extends State<DisplayPaperScreen> {
   @override
   void initState() {
     super.initState();
+    _pillar = widget.pillar;
     _rowKey = widget.initialRowKey;
-    _lockLandscape();
     _loadLiveBoardData();
   }
 
   @override
   void dispose() {
-    _restoreOrientations();
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
   }
 
-  Future<void> _lockLandscape() async {
-    await SystemChrome.setPreferredOrientations([
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
-  }
-
-  Future<void> _restoreOrientations() async {
-    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    await SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
+  String _shortRowLabel(String key) {
+    switch (key) {
+      case 'main':
+        return 'Main';
+      case 'sub':
+        return 'Sub';
+      case 'proses':
+        return 'Proses';
+      case 'kaizen':
+        return 'Kaizen';
+      default:
+        return key;
+    }
   }
 
   Future<void> _toggleFullscreen() async {
@@ -101,7 +100,7 @@ class _DisplayPaperScreenState extends State<DisplayPaperScreen> {
 
   Future<void> _loadLiveBoardData() async {
     setState(() => _loading = true);
-    final slug = widget.pillar.slug;
+    final slug = _pillar.slug;
     final meta = DisplayMonitorCatalog.metaFor(slug, _rowKey);
 
     // Default FY series from catalog
@@ -115,7 +114,7 @@ class _DisplayPaperScreenState extends State<DisplayPaperScreen> {
     var dTarget = fyTarget;
     final proses = <({String no, String date, String team, String area, String problem, String cm, String pic, String status})>[];
     final kaizens = <({String no, String theme, String before, String after, String pic, String status})>[];
-    var comment = '${widget.pillar.fullName} · ${meta.targetLabel}';
+    var comment = '${_pillar.fullName} · ${meta.targetLabel}';
     var synced = false;
 
     // 1. Try Next.js FY API when relevant
@@ -368,128 +367,238 @@ class _DisplayPaperScreenState extends State<DisplayPaperScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final meta = DisplayMonitorCatalog.metaFor(widget.pillar.slug, _rowKey);
+    final meta = DisplayMonitorCatalog.metaFor(_pillar.slug, _rowKey);
 
     return Scaffold(
       backgroundColor: const Color(0xFF070B14),
       body: SafeArea(
         child: Column(
           children: [
-            // COMPACT LANDSCAPE HUD TOOLBAR (1:1 i-Reporter / Display Frame)
+            // TOP HEADER: 1:1 Next.js /display/layout.tsx (Back + Pillars HOSHIN, SAFETY, QUALITY, PRODUCTIVITY, COST, HR-DEV, ENV + Tools)
             if (!_fullscreen)
               Container(
-                height: 44,
-                padding: const EdgeInsets.symmetric(horizontal: 10),
+                height: 46,
+                padding: const EdgeInsets.symmetric(horizontal: 6),
                 decoration: BoxDecoration(
-                  color: UbColors.surface,
+                  color: const Color(0xFF020617),
                   border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.1))),
                 ),
                 child: Row(
                   children: [
                     IconButton(
                       visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                       onPressed: () => Navigator.pop(context),
                       icon: const Icon(Icons.arrow_back_rounded, size: 18, color: Colors.white),
+                      tooltip: 'Kembali',
                     ),
-                    Text(
-                      '${widget.pillar.shortName} · A3 Landscape',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: widget.pillar.accentColor),
-                    ),
-                    const SizedBox(width: 8),
-                    if (_liveSynced)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: UbColors.emerald.withValues(alpha: 0.18),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: const Text('LIVE', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: UbColors.emerald)),
-                      ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 2),
                     Expanded(
                       child: SingleChildScrollView(
                         scrollDirection: Axis.horizontal,
                         child: Row(
-                          children: HubCatalog.displayRows.map((r) {
-                            final sel = r.key == _rowKey;
+                          children: HubCatalog.displayPillars.map((p) {
+                            final isSelected = p.slug == _pillar.slug;
                             return Padding(
-                              padding: const EdgeInsets.only(right: 6),
-                              child: ChoiceChip(
-                                visualDensity: VisualDensity.compact,
-                                label: Text(r.name, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800)),
-                                selected: sel,
-                                selectedColor: widget.pillar.gradient.first.withValues(alpha: 0.38),
-                                onSelected: (_) => setState(() => _rowKey = r.key),
+                              padding: const EdgeInsets.only(right: 4),
+                              child: InkWell(
+                                onTap: () {
+                                  if (p.slug == _pillar.slug) return;
+                                  setState(() => _pillar = p);
+                                  _loadLiveBoardData();
+                                },
+                                borderRadius: BorderRadius.circular(8),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: isSelected
+                                        ? const Color(0xFF0284C7)
+                                        : Colors.white.withValues(alpha: 0.04),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    p.shortName,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w800,
+                                      color: isSelected ? Colors.white : const Color(0xFFCBD5E1),
+                                    ),
+                                  ),
+                                ),
                               ),
                             );
                           }).toList(),
                         ),
                       ),
                     ),
-                    if (_rowKey == 'sub') ...[
-                      const SizedBox(width: 6),
-                      SegmentedButton<String>(
-                        style: SegmentedButton.styleFrom(visualDensity: VisualDensity.compact),
-                        segments: const [
-                          ButtonSegment(value: 'red', label: Text('RED', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900))),
-                          ButtonSegment(value: 'white', label: Text('WHITE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900))),
-                        ],
-                        selected: {_subTeam},
-                        onSelectionChanged: (s) => setState(() => _subTeam = s.first),
+                    const SizedBox(width: 4),
+                    Container(
+                      width: 7,
+                      height: 7,
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: _liveSynced ? UbColors.emerald : UbColors.amber,
                       ),
-                    ],
+                    ),
                     IconButton(
                       visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
                       onPressed: _loadLiveBoardData,
-                      icon: const Icon(Icons.refresh_rounded, size: 18, color: UbColors.cyan),
+                      icon: const Icon(Icons.refresh_rounded, size: 17, color: UbColors.cyan),
                       tooltip: 'Muat Ulang Data',
                     ),
                     IconButton(
                       visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
                       onPressed: _toggleFullscreen,
-                      icon: const Icon(Icons.fullscreen_rounded, size: 19, color: Colors.white),
-                      tooltip: 'Layar Penuh A3',
+                      icon: const Icon(Icons.fullscreen_rounded, size: 18, color: Colors.white),
+                      tooltip: 'Layar Penuh',
                     ),
                   ],
                 ),
               ),
 
-            // PHYSICAL A3 LANDSCAPE PAPER CANVAS (FIT TO SCREEN + PINCH-TO-ZOOM)
+            // BODY: 1:1 Next.js Left Sidebar (Main / Sub / Proses / Kaizen) + Center Paper Stage (Vertical / Portrait friendly)
             Expanded(
-              child: _loading
-                  ? const Center(child: CircularProgressIndicator())
-                  : Stack(
-                      children: [
-                        InteractiveViewer(
-                          minScale: 0.8,
-                          maxScale: 3.5,
-                          boundaryMargin: const EdgeInsets.all(40),
-                          child: Center(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (!_fullscreen)
+                    Container(
+                      width: 58,
+                      padding: const EdgeInsets.all(5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF020617),
+                        border: Border(right: BorderSide(color: Colors.white.withValues(alpha: 0.1))),
+                      ),
+                      child: Column(
+                        children: HubCatalog.displayRows.map((r) {
+                          final sel = r.key == _rowKey;
+                          return Expanded(
                             child: Padding(
-                              padding: EdgeInsets.all(_fullscreen ? 4 : 8),
-                              child: FittedBox(
-                                fit: BoxFit.contain,
-                                child: SizedBox(
-                                  width: _paperW,
-                                  height: _paperH,
-                                  child: _buildA3Paper(meta),
+                              padding: const EdgeInsets.symmetric(vertical: 2.5),
+                              child: InkWell(
+                                onTap: () {
+                                  if (r.key == _rowKey) return;
+                                  setState(() => _rowKey = r.key);
+                                },
+                                borderRadius: BorderRadius.circular(8),
+                                child: Container(
+                                  alignment: Alignment.center,
+                                  padding: const EdgeInsets.symmetric(horizontal: 3),
+                                  decoration: BoxDecoration(
+                                    color: sel
+                                        ? const Color(0xFF0284C7)
+                                        : Colors.white.withValues(alpha: 0.04),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        r.icon,
+                                        size: 15,
+                                        color: sel ? Colors.white : const Color(0xFF94A3B8),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        _shortRowLabel(r.key),
+                                        textAlign: TextAlign.center,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 10.5,
+                                          fontWeight: FontWeight.w800,
+                                          color: sel ? Colors.white : const Color(0xFFCBD5E1),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                        ),
-                        if (_fullscreen)
-                          Positioned(
-                            top: 8,
-                            right: 8,
-                            child: IconButton.filled(
-                              style: IconButton.styleFrom(backgroundColor: Colors.black54),
-                              onPressed: _toggleFullscreen,
-                              icon: const Icon(Icons.fullscreen_exit_rounded, color: Colors.white, size: 18),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  Expanded(
+                    child: Column(
+                      children: [
+                        if (!_fullscreen && _rowKey == 'sub')
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF0A0E16),
+                              border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  '${_pillar.shortName} · Sub KPI',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800,
+                                    color: _pillar.accentColor,
+                                  ),
+                                ),
+                                SegmentedButton<String>(
+                                  style: SegmentedButton.styleFrom(visualDensity: VisualDensity.compact),
+                                  segments: const [
+                                    ButtonSegment(value: 'red', label: Text('RED', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900))),
+                                    ButtonSegment(value: 'white', label: Text('WHITE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900))),
+                                  ],
+                                  selected: {_subTeam},
+                                  onSelectionChanged: (s) => setState(() => _subTeam = s.first),
+                                ),
+                              ],
                             ),
                           ),
+                        Expanded(
+                          child: _loading
+                              ? const Center(child: CircularProgressIndicator())
+                              : Stack(
+                                  children: [
+                                    InteractiveViewer(
+                                      minScale: 0.8,
+                                      maxScale: 4.0,
+                                      boundaryMargin: const EdgeInsets.all(60),
+                                      child: Center(
+                                        child: Padding(
+                                          padding: EdgeInsets.all(_fullscreen ? 4 : 8),
+                                          child: FittedBox(
+                                            fit: BoxFit.contain,
+                                            child: SizedBox(
+                                              width: _paperW,
+                                              height: _paperH,
+                                              child: _buildA3Paper(meta),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    if (_fullscreen)
+                                      Positioned(
+                                        top: 8,
+                                        right: 8,
+                                        child: IconButton.filled(
+                                          style: IconButton.styleFrom(backgroundColor: Colors.black54),
+                                          onPressed: _toggleFullscreen,
+                                          icon: const Icon(Icons.fullscreen_exit_rounded, color: Colors.white, size: 18),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                        ),
                       ],
                     ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -555,7 +664,7 @@ class _DisplayPaperScreenState extends State<DisplayPaperScreen> {
                         height: 28,
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          color: c == widget.pillar.chip ? const Color(0xFF16A34A) : const Color(0xFFE2E8F0),
+                          color: c == _pillar.chip ? const Color(0xFF16A34A) : const Color(0xFFE2E8F0),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(
@@ -563,7 +672,7 @@ class _DisplayPaperScreenState extends State<DisplayPaperScreen> {
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w900,
-                            color: c == widget.pillar.chip ? Colors.white : const Color(0xFF64748B),
+                            color: c == _pillar.chip ? Colors.white : const Color(0xFF64748B),
                           ),
                         ),
                       ),
