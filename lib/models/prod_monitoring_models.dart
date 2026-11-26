@@ -248,9 +248,9 @@ class ProdMonitoringMath {
           effExt: double.tryParse(st.extEffPct) ?? 100,
           effTotal: double.tryParse(st.totalEffPct) ?? effInt,
           minusUnits: minus,
-          delayMin: st.totalDelayMin,
-          intDelayMin: st.intDelayMin,
-          extDelayMin: st.extDelayMin,
+          delayMin: st.totalDelayMin.round(),
+          intDelayMin: st.intDelayMin.round(),
+          extDelayMin: st.extDelayMin.round(),
           attendanceRate: 100,
           isSaved: true,
         );

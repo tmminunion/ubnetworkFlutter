@@ -5,8 +5,18 @@ import 'package:ubnetwork_flutter/models/prod_monitoring_models.dart';
 
 void main() {
   test('ProdMonitoringMath builds 1-31 fallback days and merges local checksheet reports', () {
-    final rep = UbMasterData.createBlankReport(tanggal: '2026-11-05', shift: 'WHITE', taktTime: 2.4);
-    rep.slots.first.act = 25;
+    final slots = UbMasterData.buildSlotsFromTemplate('pagi_normal', 2.4, 2);
+    slots.first.act = 25;
+    final rep = ChecksheetReport(
+      id: '2026-11-05_WHITE_UB_ASSY',
+      tanggal: '2026-11-05',
+      shift: 'WHITE',
+      taktTime: 2.4,
+      cbuModels: UbMasterData.defaultCbuModels(),
+      ckdParts: UbMasterData.defaultCkdParts(),
+      members: UbMasterData.defaultMembers('WHITE'),
+      slots: slots,
+    );
     final days = ProdMonitoringMath.buildLocalFallbackDays(2026, 11, [rep], taktTime: 2.4);
     expect(days.length, 30);
 
