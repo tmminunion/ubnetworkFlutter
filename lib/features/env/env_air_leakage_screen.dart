@@ -199,6 +199,7 @@ class _EnvAirLeakageScreenState extends State<EnvAirLeakageScreen> with SingleTi
           next.insert(0, item);
         }
         await CostEnvStore.instance.saveAirFindings(next);
+        await CostEnvStore.instance.syncUpsertAirFinding(item, isEdit: existing != null);
         if (mounted) {
           setState(() => _findings = next);
           _tabCtrl.animateTo(1);
@@ -452,6 +453,7 @@ class _EnvAirLeakageScreenState extends State<EnvAirLeakageScreen> with SingleTi
                                         final next = _findings.where((e) => e.id != f.id).toList();
                                         await CostEnvStore.instance.saveAirFindings(next);
                                         if (mounted) setState(() => _findings = next);
+                                        await CostEnvStore.instance.syncDeleteAirFinding(f.id);
                                       },
                                     ),
                                   ],

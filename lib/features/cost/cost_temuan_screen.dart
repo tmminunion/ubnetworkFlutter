@@ -159,6 +159,7 @@ class _CostTemuanScreenState extends State<CostTemuanScreen> {
           next.insert(0, item);
         }
         await CostEnvStore.instance.saveCostFindings(_ym, next);
+        await CostEnvStore.instance.syncUpsertCostFinding(item, isEdit: existing != null);
         if (mounted) setState(() => _items = next);
       }
     } finally {
@@ -176,6 +177,7 @@ class _CostTemuanScreenState extends State<CostTemuanScreen> {
     final next = _items.where((e) => e.id != f.id).toList();
     await CostEnvStore.instance.saveCostFindings(_ym, next);
     if (mounted) setState(() => _items = next);
+    await CostEnvStore.instance.syncDeleteCostFinding(f.id);
   }
 
   @override

@@ -242,6 +242,7 @@ class _ProdKaizenScreenState extends State<ProdKaizenScreen> with SingleTickerPr
           next.insert(0, item);
         }
         await ProductivityOpsStore.instance.saveKaizenItems(next);
+        await ProductivityOpsStore.instance.syncUpsertKaizen(item, isEdit: existing != null);
         if (mounted) setState(() => _items = next);
       }
     } finally {
@@ -259,6 +260,7 @@ class _ProdKaizenScreenState extends State<ProdKaizenScreen> with SingleTickerPr
     final next = _items.where((e) => e.id != item.id).toList();
     await ProductivityOpsStore.instance.saveKaizenItems(next);
     if (mounted) setState(() => _items = next);
+    await ProductivityOpsStore.instance.syncDeleteKaizen(item.id);
   }
 
   @override

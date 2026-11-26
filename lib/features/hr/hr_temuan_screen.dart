@@ -146,6 +146,7 @@ class _HrTemuanScreenState extends State<HrTemuanScreen> {
           next.insert(0, item);
         }
         await HrMoraleStore.instance.saveHrFindings(_ym, next);
+        await HrMoraleStore.instance.syncUpsertHrFinding(item, isEdit: existing != null);
         if (mounted) setState(() => _items = next);
       }
     } finally {
@@ -268,6 +269,7 @@ class _HrTemuanScreenState extends State<HrTemuanScreen> {
                                     final next = _items.where((e) => e.id != f.id).toList();
                                     await HrMoraleStore.instance.saveHrFindings(_ym, next);
                                     if (mounted) setState(() => _items = next);
+                                    await HrMoraleStore.instance.syncDeleteHrFinding(f.id);
                                   },
                                 ),
                               ],

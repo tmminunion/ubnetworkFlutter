@@ -48,6 +48,7 @@ class _EnvTemuanScreenState extends State<EnvTemuanScreen> {
         .toList();
     await CostEnvStore.instance.saveEnvFindings(_ym, next);
     if (mounted) setState(() => _items = next);
+    await CostEnvStore.instance.syncUpsertEnvFinding(f.copyWith(status: f.status == 'open' ? 'closed' : 'open'), isEdit: true);
   }
 
   Future<void> _openForm([EnvFindingItem? existing]) async {
@@ -188,6 +189,7 @@ class _EnvTemuanScreenState extends State<EnvTemuanScreen> {
           next.insert(0, item);
         }
         await CostEnvStore.instance.saveEnvFindings(_ym, next);
+        await CostEnvStore.instance.syncUpsertEnvFinding(item, isEdit: existing != null);
         if (mounted) setState(() => _items = next);
       }
     } finally {
@@ -358,6 +360,7 @@ class _EnvTemuanScreenState extends State<EnvTemuanScreen> {
                                     final next = _items.where((e) => e.id != f.id).toList();
                                     await CostEnvStore.instance.saveEnvFindings(_ym, next);
                                     if (mounted) setState(() => _items = next);
+                                    await CostEnvStore.instance.syncDeleteEnvFinding(f.id);
                                   },
                                 ),
                               ],

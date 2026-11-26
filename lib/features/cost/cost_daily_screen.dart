@@ -82,6 +82,7 @@ class _CostDailyScreenState extends State<CostDailyScreen> {
         nextMap[item.id] = nextArr;
         final updated = _team == 'red' ? d.copyWith(red: nextMap) : d.copyWith(white: nextMap);
         await CostEnvStore.instance.saveCostDaily(updated);
+        await CostEnvStore.instance.patchCostCell(ym: _ym, team: _team, itemId: item.id, day: day, value: val);
         if (mounted) setState(() => _data = updated);
       }
     } finally {

@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/checksheet_models.dart';
 import '../models/productivity_ops_models.dart';
 import 'local_store.dart';
+import 'ub_web_api.dart';
 
 class ProductivityOpsStore {
   ProductivityOpsStore._();
@@ -18,7 +19,7 @@ class ProductivityOpsStore {
   static const String _kaizenKey = 'ubf_prod_kaizen_v1';
 
   // ===========================================================================
-  // 1. AFTER-PROD 5S
+  // 1. AFTER-PROD 5S — 1:1 with bungtemin.net/ub/api
   // ===========================================================================
   Future<({List<AfterProdMember> members, bool fromServer})> fetchAfterMembers(String shift) async {
     final cfg = await LocalStore.instance.getSettings();
@@ -206,9 +207,33 @@ class ProductivityOpsStore {
       ];
 
   // ===========================================================================
-  // 2. TASK MANAGER POST-IT HUB
+  // 2. TASK MANAGER POST-IT HUB — 1:1 with Next.js /api/task
   // ===========================================================================
   Future<List<TaskHubItem>> loadTasks() async {
+    final res = await UbWebApi.instance.getJson('/api/task', query: {'action': 'data'});
+    if (res.ok) {
+      final rawMods = res.map['modules'] ?? res.map['pekerjaans'];
+      if (rawMods is List) {
+        final remote = <TaskHubItem>[];
+        for (final mod in rawMods) {
+          if (mod is Map && mod['items'] is List) {
+            final modName = '${mod['nama_pekerjaan'] ?? 'Umum'}';
+            for (final it in mod['items'] as List) {
+              if (it is Map) {
+                final m = Map<String, dynamic>.from(it);
+                m['pekerjaan_nama'] ??= modName;
+                remote.add(TaskHubItem.fromJson(m));
+              }
+            }
+          }
+        }
+        if (remote.isNotEmpty) {
+          await saveTasks(remote);
+          return remote;
+        }
+      }
+    }
+
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_tasksKey);
     if (raw != null && raw.isNotEmpty) {
@@ -269,8 +294,17 @@ class ProductivityOpsStore {
     await prefs.setString(_tasksKey, jsonEncode(tasks.map((e) => e.toJson()).toList()));
   }
 
+  Future<bool> syncUpdateTaskStatus(int taskId, String status) async {
+    final res = await UbWebApi.instance.postJson(
+      '/api/task',
+      {'task_id': taskId, 'status': status},
+      query: {'action': 'update_task_status'},
+    );
+    return res.ok;
+  }
+
   // ===========================================================================
-  // 3. MASTER SHIFT TEMPLATES
+  // 3. MASTER SHIFT TEMPLATES — 1:1 with bungtemin.net/ub/api
   // ===========================================================================
   Future<({List<ShiftTemplateModel> templates, double masterTaktTime, bool fromServer})> fetchTemplates(
     double taktTime,
@@ -415,9 +449,40 @@ class ProductivityOpsStore {
       ];
 
   // ===========================================================================
-  // 4. KAIZEN REPORT PRODUCTIVITY
+  // 4. KAIZEN REPORT PRODUCTIVITY — 1:1 with Next.js /api/kaizen-reports?area=P
   // ===========================================================================
   Future<List<ProdKaizenItem>> loadKaizenItems() async {
+    final res = await UbWebApi.instance.getJson('/api/kaizen-reports', query: {'area': 'P'});
+    if (res.ok) {
+      final rawList = res.map['items'] is List
+          ? res.map['items'] as List
+          : (res.data is List ? res.list : null);
+      if (rawList != null && rawList.isNotEmpty) {
+        final remote = rawList
+            .whereType<Map>()
+            .map((m) {
+              final j = Map<String, dynamic>.from(m);
+              return ProdKaizenItem(
+                id: '${j['id'] ?? j['_id'] ?? ''}',
+                tag: '${j['tag'] ?? j['area'] ?? 'PRODUCTIVITY'}',
+                month: '${j['month'] ?? (j['tanggal']?.toString().substring(0, 7) ?? ubTodayYmd().substring(0, 7))}',
+                theme: '${j['theme'] ?? j['title'] ?? j['problem'] ?? ''}',
+                lineProcess: '${j['line_process'] ?? j['machine'] ?? j['process'] ?? 'UB Assy'}',
+                pic: '${j['pic'] ?? ''}',
+                beforeValue: '${j['before_value'] ?? j['beforeValue'] ?? ''}',
+                afterValue: '${j['after_value'] ?? j['afterValue'] ?? ''}',
+                status: '${j['status'] ?? 'ON PROGRES'}'.toUpperCase(),
+                rootCause: '${j['root_cause'] ?? j['beforeText'] ?? ''}',
+                countermeasure: '${j['countermeasure'] ?? j['afterText'] ?? ''}',
+                sourceChokoteiKey: '${j['chokoteiId'] ?? j['source_chokotei_key'] ?? ''}',
+              );
+            })
+            .toList();
+        await saveKaizenItems(remote);
+        return remote;
+      }
+    }
+
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_kaizenKey);
     if (raw != null && raw.isNotEmpty) {
@@ -463,5 +528,26 @@ class ProductivityOpsStore {
   Future<void> saveKaizenItems(List<ProdKaizenItem> items) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kaizenKey, jsonEncode(items.map((e) => e.toJson()).toList()));
+  }
+
+  Future<bool> syncUpsertKaizen(ProdKaizenItem item, {required bool isEdit}) async {
+    final payload = {
+      ...item.toJson(),
+      'area': 'P',
+      'title': item.theme,
+      'beforeText': item.rootCause,
+      'afterText': item.countermeasure,
+      'beforeValue': item.beforeValue,
+      'afterValue': item.afterValue,
+    };
+    final res = isEdit
+        ? await UbWebApi.instance.putJson('/api/kaizen-reports/${Uri.encodeComponent(item.id)}', payload)
+        : await UbWebApi.instance.postJson('/api/kaizen-reports', payload);
+    return res.ok;
+  }
+
+  Future<bool> syncDeleteKaizen(String id) async {
+    final res = await UbWebApi.instance.deleteJson('/api/kaizen-reports/${Uri.encodeComponent(id)}');
+    return res.ok;
   }
 }

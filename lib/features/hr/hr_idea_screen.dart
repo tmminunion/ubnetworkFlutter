@@ -82,6 +82,7 @@ class _HrIdeaScreenState extends State<HrIdeaScreen> {
         final updated = team == 'red' ? d.copyWith(red: nextTeam) : d.copyWith(white: nextTeam);
         await HrMoraleStore.instance.saveHrIdea(updated);
         if (mounted) setState(() => _data = updated);
+        await HrMoraleStore.instance.patchHrIdeaRemote(_ym, {'team': team, 'field': 'mp', 'value': nextTeam.mp});
       }
     } finally {
       mpCtrl.dispose();
@@ -147,6 +148,12 @@ class _HrIdeaScreenState extends State<HrIdeaScreen> {
         );
         await HrMoraleStore.instance.saveHrIdea(updated);
         if (mounted) setState(() => _data = updated);
+        await Future.wait([
+          HrMoraleStore.instance.patchHrIdeaRemote(_ym, {'team': 'red', 'field': 'idea', 'day': day, 'value': rIdea[day - 1]}),
+          HrMoraleStore.instance.patchHrIdeaRemote(_ym, {'team': 'red', 'field': 'maker', 'day': day, 'value': rMaker[day - 1]}),
+          HrMoraleStore.instance.patchHrIdeaRemote(_ym, {'team': 'white', 'field': 'idea', 'day': day, 'value': wIdea[day - 1]}),
+          HrMoraleStore.instance.patchHrIdeaRemote(_ym, {'team': 'white', 'field': 'maker', 'day': day, 'value': wMaker[day - 1]}),
+        ]);
       }
     } finally {
       riCtrl.dispose();

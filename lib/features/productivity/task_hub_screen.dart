@@ -72,6 +72,7 @@ class _TaskHubScreenState extends State<TaskHubScreen> with SingleTickerProvider
     await ProductivityOpsStore.instance.saveTasks(next);
     if (!mounted) return;
     setState(() => _tasks = next);
+    await ProductivityOpsStore.instance.syncUpdateTaskStatus(task.id, newStatus);
   }
 
   Future<void> _deleteTask(TaskHubItem task) async {
