@@ -8,6 +8,11 @@ import '../cost/cost_temuan_screen.dart';
 import '../env/env_air_leakage_screen.dart';
 import '../env/env_daily_screen.dart';
 import '../env/env_temuan_screen.dart';
+import '../hr/bacadoa_screen.dart';
+import '../hr/hr_idea_screen.dart';
+import '../hr/hr_temuan_screen.dart';
+import '../hr/idnu_screen.dart';
+import '../hr/rank_mp_screen.dart';
 import '../productivity/cbu_monitoring_screen.dart';
 import '../productivity/chokotei_analytics_screen.dart';
 import '../productivity/ckd_monitoring_screen.dart';
@@ -196,6 +201,41 @@ class SubHubScreen extends StatelessWidget {
     if (mod.route == '/env/daily') {
       Navigator.of(context).push(
         MaterialPageRoute<void>(builder: (_) => const EnvDailyScreen()),
+      );
+      return;
+    }
+
+    if (mod.route == '/bacadoa') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const BacaDoaScreen()),
+      );
+      return;
+    }
+
+    if (mod.route == '/hr/rankmp') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const RankMpScreen()),
+      );
+      return;
+    }
+
+    if (mod.route == '/hr/idea') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const HrIdeaScreen()),
+      );
+      return;
+    }
+
+    if (mod.route == '/idnu') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const IdnuScreen()),
+      );
+      return;
+    }
+
+    if (mod.route == '/hr/temuan') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const HrTemuanScreen()),
       );
       return;
     }

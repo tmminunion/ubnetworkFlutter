@@ -17,13 +17,13 @@ Dokumen ini menjadi acuan resmi migrasi 1:1 dari `ubnetwork` (Next.js Web) ke `u
 | :--- | :--- | :--- | :--- |
 | `/` (Home Hub) | Top Bar macOS, Display & Monitor, 6 Pilar `SQPCEHR`, 5 Kaizen, 11 Quick App | **Selesai (1:1)** | `lib/features/hub/hub_screen.dart` |
 | `/display` (GL Board Hub) | 7 Pilar × 4 Kertas KPI (28 board) | **Shell 1:1** | `lib/features/hub/display_board_screen.dart` |
-| `/productivity` | 14 modul | **14 / 14 Native** | **Selesai 100%** (semua 14 modul operasional & master selesai) |
+| `/productivity` | 14 modul | **14 / 14 Native** | **Selesai 100%** (seluruh 14 modul operasional & master selesai) |
 | `/safety` | 8 modul | **6 / 8 Native** | Semua 6 modul operasional Safety selesai (sisa 2 board Display/Slide di Fase 6) |
 | `/quality` | 6 modul | **2 / 6 Native** | Semua modul operasional Quality (`out` & `in`) selesai (sisa 4 Display di Fase 6) |
 | `/cost` | 6 modul | **2 / 6 Native** | Semua modul operasional Cost (`daily` & `temuan`) selesai (sisa 4 Display di Fase 6) |
 | `/env` | 7 modul | **3 / 7 Native** | Semua modul operasional Env (`air-leakage`, `daily`, `temuan`) selesai (sisa 4 Display di Fase 6) |
-| `/hr` | 9 modul | **Shell 1:1** | Target Fase 5 |
-| Kaizen & Quick App Dx | 5 Kaizen + Quick App Dx | **Selesai 100% Native** | QCC A3, TPM, 5R A3, SW Observasi A3, Henkaten, Post-It, UBdrive, Docs |
+| `/hr` | 9 modul | **5 / 9 Native** | Semua 5 modul operasional HR (`bacadoa`, `rankmp`, `idea`, `idnu`, `temuan`) selesai (sisa 4 Display di Fase 6) |
+| Kaizen & Quick App Dx | 5 Kaizen + 11 Quick App + `/monitor` | **Shell 1:1** | Target Fase 7 |
 
 ---
 
@@ -36,37 +36,37 @@ Dokumen ini menjadi acuan resmi migrasi 1:1 dari `ubnetwork` (Next.js Web) ke `u
 - [x] Dokumen `MIGRATION_PLAN.md`
 
 ### Fase 1 — Pilar Safety (`/safety`)
-- [x] **1.1** `/safety/temuan` — Temuan Safety (List Up Problem & Kaizen Report, Matriks Risiko Toyota Karawang Plant `Aa–Cc`, STOP 6, CRUD Offline-First + Sync)
-- [x] **1.2** `/kyt/monitoring` — KYT Monitoring 12 Bulan (1 Bulan 1 KYT per Group SGA Red & White, Live Sync MySQL + Offline Cache)
-- [x] **1.3** `/safety/group` — Group SGA (Small Group Activity, Roster Red & White terpisah, Live Sync MySQL + Offline Cache)
-- [x] **1.4** `/safety/device` — Safety Device & Interlock (Inspeksi OK/NG per Shift + offline persistence)
-- [x] **1.5** `/safety/bira` — BIRA (Coaching K3, Safe/Unsafe/Nearmiss + form input)
-- [x] **1.6** `/safety/kpi` — Safety KPI & Zero Accident (1.428 Safe Days + Hiyari Hatto Nearmiss Log)
+- [x] **1.1** `/safety/temuan` — Temuan Safety
+- [x] **1.2** `/kyt/monitoring` — KYT Monitoring 12 Bulan
+- [x] **1.3** `/safety/group` — Group SGA
+- [x] **1.4** `/safety/device` — Safety Device & Interlock
+- [x] **1.5** `/safety/bira` — BIRA
+- [x] **1.6** `/safety/kpi` — Safety KPI & Zero Accident
 
 ### Fase 2 — Pilar Quality (`/quality`)
-- [x] **2.1** `/quality/daily/out` — Defect Out Flow (Red & White terpisah, Grafik D/U, Tabel 1–31, Zero Defect, Temuan CRUD)
-- [x] **2.2** `/quality/daily/in` — Defect In Proses (Red & White terpisah, Grafik D/U, Tabel 1–31, Zero Defect, Temuan CRUD)
+- [x] **2.1** `/quality/daily/out` — Defect Out Flow
+- [x] **2.2** `/quality/daily/in` — Defect In Proses
 
 ### Fase 3 — Pilar Productivity Lanjutan (`/productivity`) — **SELESAI 14/14 NATIVE**
-- [x] **3.1** `/productivity/monitoring` — Monitoring Produksi & Efisiensi 1–31
+- [x] **3.1** `/productivity/monitoring`
 - [x] **3.2** `/productivity/chokotei` & `/productivity/chokotei-manual`
 - [x] **3.3** `/productivity/cbu` & `/productivity/ckd`
 - [x] **3.4** `/productivity/roster` & `/productivity/absensi`
 - [x] **3.5** `/productivity/after-prod`, `/productivity/tasks`, `/productivity/shift-template`, `/productivity/kaizen`
 
 ### Fase 4 — Pilar Cost (`/cost`) & Environment (`/env`) — **SELESAI 5/5 OPERASIONAL NATIVE**
-- [x] **4.1** `/cost/daily` & `/cost/temuan` (Control Cost Daily 1–31 Red & White + Pace Projection + Kelola Item, Temuan Cost CRUD + Potensi Loss Rp)
-- [x] **4.2** `/env/air-leakage` (`#lub` & `#klub`), `/env/daily` (kWh Red/White + EVA O/X), `/env/temuan` (Temuan Lingkungan & Kaizen Area E)
+- [x] **4.1** `/cost/daily` & `/cost/temuan`
+- [x] **4.2** `/env/air-leakage` (`#lub` & `#klub`), `/env/daily` (kWh), `/env/temuan`
 
-### Fase 5 — Pilar HR & Morale (`/hr`)
-- [ ] **5.1** `/bacadoa` — Jadwal & Matrik Baca Doa Asare 1–31 (+ cetak A4)
-- [ ] **5.2** `/hr/rankmp` — Rank MP
-- [ ] **5.3** `/hr/idea`, `/idnu` (Idea), `/hr/temuan`
+### Fase 5 — Pilar HR & Morale (`/hr`) — **SELESAI 5/5 OPERASIONAL NATIVE**
+- [x] **5.1** `/bacadoa` — Jadwal & Matrik Baca Doa Asare 1–31 (Rotasi Selasa–Jumat, Senin Briefing Masal & Weekend off, toggle `○ ↔ ●`)
+- [x] **5.2** `/hr/rankmp` — Rank MP (Akumulasi Poin otomatis dari Baca Doa, Multi-Duty +15, Podium Top 3, Tier S/A/B/C, Evaluasi HR)
+- [x] **5.3** `/hr/idea` (Monthly Idea Record Red/White, Idea/MP & Participant %), `/idnu` (Idea Portal SQPCHR → Approve LH & Paid), `/hr/temuan` (Temuan & Kaizen HR-Dev)
 
 ### Fase 6 — Display KPI 16:9 (`/display`) & Monitor (`/monitor`)
 - [ ] **6.1** Kertas `Main KPI`, `Sub KPI`, `Proses KPI`, `Kaizen` (7 Pilar)
 - [ ] **6.2** `/monitor` — Slide Show TV Shopfloor
 
-### Fase 7 — Quick App Dx & Aktivitas Kaizen — **SELESAI 100% NATIVE**
-- [x] **7.1** Henkaten Board 4M, Post-It Board, UBdrive SharePoint, Dokumentasi Sistem *(Andon dihapus dari Hub)*
-- [x] **7.2** QCC (Risalah A3 8 Langkah PDCA + 5W2H), TPM (Jishu Hozen & OEE), 5R / 5S (Audit A3 + Red-Tag + Shadow Board), SW Observasi (TSKK / SWCS A3 + Genba Time Study 10 Siklus + EIS)
+### Fase 7 — Quick App Dx & Aktivitas Kaizen
+- [ ] **7.1** Henkaten Board, Post-It Board, UBdrive, Andon Live Monitor, Dokumentasi
+- [ ] **7.2** QCC, TPM, 5R / 5S, SW Observasi

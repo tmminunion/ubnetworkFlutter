@@ -21,6 +21,8 @@ import '../productivity/after_prod_screen.dart';
 import '../productivity/task_hub_screen.dart';
 import '../env/env_daily_screen.dart';
 import '../env/env_temuan_screen.dart';
+import '../hr/bacadoa_screen.dart';
+import '../hr/idnu_screen.dart';
 import '../safety/sga_group_screen.dart';
 import 'sub_hub_screen.dart';
 
@@ -199,8 +201,16 @@ class _HubScreenState extends State<HubScreen> {
       );
       return;
     }
-    if (route == '/bacadoa' || route == '/idnu') {
-      _openSubHub('hr');
+    if (route == '/bacadoa') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const BacaDoaScreen()),
+      );
+      return;
+    }
+    if (route == '/idnu') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const IdnuScreen()),
+      );
       return;
     }
 
