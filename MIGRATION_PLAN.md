@@ -23,7 +23,7 @@ Dokumen ini menjadi acuan resmi migrasi 1:1 dari `ubnetwork` (Next.js Web) ke `u
 | `/cost` | 6 modul | **2 / 6 Native** | Semua modul operasional Cost (`daily` & `temuan`) selesai (sisa 4 Display di Fase 6) |
 | `/env` | 7 modul | **3 / 7 Native** | Semua modul operasional Env (`air-leakage`, `daily`, `temuan`) selesai (sisa 4 Display di Fase 6) |
 | `/hr` | 9 modul | **Shell 1:1** | Target Fase 5 |
-| Kaizen & Quick App Dx | 5 Kaizen + 11 Quick App + `/monitor` | **Shell 1:1** | Target Fase 7 |
+| Kaizen & Quick App Dx | 5 Kaizen + Quick App Dx | **Selesai 100% Native** | QCC A3, TPM, 5R A3, SW Observasi A3, Henkaten, Post-It, UBdrive, Docs |
 
 ---
 
@@ -67,6 +67,6 @@ Dokumen ini menjadi acuan resmi migrasi 1:1 dari `ubnetwork` (Next.js Web) ke `u
 - [ ] **6.1** Kertas `Main KPI`, `Sub KPI`, `Proses KPI`, `Kaizen` (7 Pilar)
 - [ ] **6.2** `/monitor` — Slide Show TV Shopfloor
 
-### Fase 7 — Quick App Dx & Aktivitas Kaizen
-- [ ] **7.1** Henkaten Board, Post-It Board, UBdrive, Andon Live Monitor, Dokumentasi
-- [ ] **7.2** QCC, TPM, 5R / 5S, SW Observasi
+### Fase 7 — Quick App Dx & Aktivitas Kaizen — **SELESAI 100% NATIVE**
+- [x] **7.1** Henkaten Board 4M, Post-It Board, UBdrive SharePoint, Dokumentasi Sistem *(Andon dihapus dari Hub)*
+- [x] **7.2** QCC (Risalah A3 8 Langkah PDCA + 5W2H), TPM (Jishu Hozen & OEE), 5R / 5S (Audit A3 + Red-Tag + Shadow Board), SW Observasi (TSKK / SWCS A3 + Genba Time Study 10 Siklus + EIS)

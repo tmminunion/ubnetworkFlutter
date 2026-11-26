@@ -100,13 +100,12 @@ class AuthService {
       await prefs.setString(_kGateCookie, cookieHeader);
     }
 
-    // Sinkronkan role shift & nama operator ke UbSettings
+    // Sinkronkan role shift ke UbSettings
     final cfg = await LocalStore.instance.getSettings();
-    if (user.shift == 'RED' || user.shift == 'WHITE' || user.shift == 'ALL') {
+    if (user.shift == 'ALL') {
+      cfg.role = 'ADMIN';
+    } else if (user.shift == 'RED' || user.shift == 'WHITE') {
       cfg.role = user.shift;
-    }
-    if (user.name.trim().isNotEmpty) {
-      cfg.operatorName = user.name.trim();
     }
     await LocalStore.instance.saveSettings(cfg);
   }

@@ -9,6 +9,8 @@ class UbColors {
   static const border = Color(0xFF334155); // slate-700
   static const cyan = Color(0xFF22D3EE);
   static const cyanDark = Color(0xFF06B6D4);
+  static const primaryBlue = Color(0xFF2563EB);
+  static const indigo = Color(0xFF4F46E5);
   static const emerald = Color(0xFF10B981);
   static const amber = Color(0xFFF59E0B);
   static const rose = Color(0xFFF43F5E);

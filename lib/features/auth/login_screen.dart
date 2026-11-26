@@ -453,13 +453,13 @@ class _LoginScreenState extends State<LoginScreen> {
 
   InputDecoration _darkInputDec({
     required String label,
-    required String hint,
+    required String hintText,
     required IconData icon,
     Widget? suffix,
   }) {
     return InputDecoration(
       labelText: label,
-      hintText: hint,
+      hintText: hintText,
       labelStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
       hintStyle: const TextStyle(color: Color(0xFF475569), fontSize: 13),
       prefixIcon: Icon(icon, color: const Color(0xFF38BDF8), size: 20),

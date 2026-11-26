@@ -314,7 +314,7 @@ class LocalStore {
       final uri = Uri.parse('$base?action=monthly_reports&year_month=${Uri.encodeQueryComponent(ym)}');
       final res = await http.get(uri, headers: headers).timeout(const Duration(seconds: 10));
       if (res.statusCode < 200 || res.statusCode >= 300) {
-        return findLatestPrevFinish(targetDate, targetShift, false);
+        return await findLatestPrevFinish(targetDate, targetShift, false);
       }
 
       final decoded = jsonDecode(res.body);
@@ -338,7 +338,7 @@ class LocalStore {
         }
       }
 
-      if (cands.isEmpty) return findLatestPrevFinish(targetDate, targetShift, false);
+      if (cands.isEmpty) return await findLatestPrevFinish(targetDate, targetShift, false);
       cands.sort((a, b) {
         final da = (a['tanggal'] ?? '').toString();
         final db = (b['tanggal'] ?? '').toString();
