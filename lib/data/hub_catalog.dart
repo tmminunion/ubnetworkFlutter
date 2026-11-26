@@ -489,10 +489,11 @@ class HubCatalog {
           title: 'Temuan Safety (List Up Problem)',
           desc: 'Pencatatan, penanggulangan, dan verifikasi temuan potensi bahaya hasil patrol keselamatan shopfloor.',
           route: '/safety/temuan',
-          badge: 'CRUD Temuan',
+          badge: 'NATIVE READY',
           gradient: [Color(0xFFF43F5E), Color(0xFFDC2626)],
           accentColor: Color(0xFFFB7185),
           icon: Icons.assignment_late_rounded,
+          isNativeReady: true,
         ),
         SubModuleItem(
           id: 'group',

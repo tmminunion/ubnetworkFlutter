@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../data/hub_catalog.dart';
 import '../checksheet/checksheet_screen.dart';
+import '../safety/safety_temuan_screen.dart';
 import 'display_board_screen.dart';
 
 class SubHubScreen extends StatelessWidget {
@@ -19,6 +20,13 @@ class SubHubScreen extends StatelessWidget {
     if (mod.route == '/productivity/checksheet' || mod.route == '/productivity/print') {
       Navigator.of(context).push(
         MaterialPageRoute<void>(builder: (_) => const ChecksheetScreen()),
+      );
+      return;
+    }
+
+    if (mod.route == '/safety/temuan') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const SafetyTemuanScreen()),
       );
       return;
     }
