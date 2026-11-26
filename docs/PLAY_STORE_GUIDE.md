@@ -16,6 +16,10 @@ Semua kebutuhan teknis build & signing untuk Google Play Store sudah disiapkan o
 ## 2. Aset Grafis Play Console (Siap Upload)
 - **App Icon (512×512 px):** `assets/playstore/icon_512.png`
 - **Feature Graphic (1024×500 px):** `assets/playstore/feature_graphic_1024x500.png`
+- **Phone Screenshots (1080×1920 px, 3 file):**
+  - `assets/playstore/screenshot_1_canvas.png`
+  - `assets/playstore/screenshot_2_input.png`
+  - `assets/playstore/screenshot_3_sync_pdf.png`
 - **Launcher & Adaptive Icon:** `assets/icon/app_icon.png` & `assets/icon/app_icon_foreground.png` (otomatis digenerate ke `mipmap-*` saat build via `flutter_launcher_icons`).
 
 ## 3. Teks Store Listing (Siap Copy-Paste)
