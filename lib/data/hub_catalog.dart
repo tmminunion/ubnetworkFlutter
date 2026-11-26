@@ -666,10 +666,11 @@ class HubCatalog {
           title: 'Monitoring Produksi & Efisiensi 1-31',
           desc: 'Rekapitulasi bulanan Act vs Plan, efisiensi internal, dan total menit delay tanggal 1-31 Red & White.',
           route: '/productivity/monitoring',
-          badge: 'Rekap 1-31',
+          badge: 'NATIVE READY',
           gradient: [Color(0xFF10B981), Color(0xFF0891B2)],
           accentColor: Color(0xFF34D399),
           icon: Icons.analytics_rounded,
+          isNativeReady: true,
         ),
         SubModuleItem(
           id: 'chokotei',

@@ -17,7 +17,7 @@ Dokumen ini menjadi acuan resmi migrasi 1:1 dari `ubnetwork` (Next.js Web) ke `u
 | :--- | :--- | :--- | :--- |
 | `/` (Home Hub) | Top Bar macOS, Display & Monitor, 6 Pilar `SQPCEHR`, 5 Kaizen, 11 Quick App | **Selesai (1:1)** | `lib/features/hub/hub_screen.dart` |
 | `/display` (GL Board Hub) | 7 Pilar × 4 Kertas KPI (28 board) | **Shell 1:1** | `lib/features/hub/display_board_screen.dart` |
-| `/productivity` | 14 modul | **3 / 14 Native** | `checksheet` (A3), `print` (PDF A3), `settings` |
+| `/productivity` | 14 modul | **4 / 14 Native** | `checksheet` (A3), `print`, `settings`, `monitoring` (1–31) |
 | `/safety` | 8 modul | **6 / 8 Native** | Semua 6 modul operasional Safety selesai (sisa 2 board Display/Slide di Fase 6) |
 | `/quality` | 6 modul | **2 / 6 Native** | Semua modul operasional Quality (`out` & `in`) selesai (sisa 4 Display di Fase 6) |
 | `/cost` | 6 modul | **Shell 1:1** | Target Fase 4 |
@@ -48,7 +48,7 @@ Dokumen ini menjadi acuan resmi migrasi 1:1 dari `ubnetwork` (Next.js Web) ke `u
 - [x] **2.2** `/quality/daily/in` — Defect In Proses (Red & White terpisah, Grafik D/U, Tabel 1–31, Zero Defect, Temuan CRUD)
 
 ### Fase 3 — Pilar Productivity Lanjutan (`/productivity`)
-- [ ] **3.1** `/productivity/monitoring` — Monitoring Produksi & Efisiensi 1–31
+- [x] **3.1** `/productivity/monitoring` — Monitoring Produksi & Efisiensi 1–31 (6 KPI Cards, Grafik Tren 1–31, Tabel + Link langsung ke Checksheet A3)
 - [ ] **3.2** `/productivity/chokotei` & `/productivity/chokotei-manual`
 - [ ] **3.3** `/productivity/cbu` & `/productivity/ckd` (Monitoring 1–31)
 - [ ] **3.4** `/productivity/roster` & `/productivity/absensi`
