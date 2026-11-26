@@ -35,6 +35,7 @@ class _ChecksheetScreenState extends State<ChecksheetScreen> {
   ChecksheetReport? _rep;
   ({String finish, String label})? _prevCarry;
   bool _loading = true;
+  bool _isOnline = false;
   bool _syncing = false;
   bool _printing = false;
   double _currentScale = 0.45;
@@ -62,10 +63,15 @@ class _ChecksheetScreenState extends State<ChecksheetScreen> {
 
   Future<void> _init() async {
     final cfg = await LocalStore.instance.getSettings();
+    final userShift = AuthService.instance.currentUser?.shift ?? '';
     final dt = widget.initialDate ?? UbMasterData.wibToday();
-    final sh = (widget.initialShift ?? (cfg.role == 'RED' ? 'RED' : 'WHITE')).toUpperCase();
+    final rawSh = (widget.initialShift ??
+            (userShift == 'RED' || userShift == 'WHITE'
+                ? userShift
+                : (cfg.role == 'RED' ? 'RED' : 'WHITE')))
+        .toUpperCase();
     _cfg = cfg;
-    await _loadReport(dt, sh == 'RED' ? 'RED' : 'WHITE');
+    await _loadReport(dt, rawSh == 'RED' ? 'RED' : 'WHITE');
     WidgetsBinding.instance.addPostFrameCallback((_) => _fitWidth());
   }
 
@@ -100,12 +106,27 @@ class _ChecksheetScreenState extends State<ChecksheetScreen> {
   Future<void> _loadReport(String date, String shift) async {
     setState(() => _loading = true);
     final id = UbMasterData.makeReportId(date, shift, _cfg.lineName);
-    final existing = await LocalStore.instance.getReport(id);
-    final prev = await LocalStore.instance.findLatestPrevFinish(date, shift, false);
+
+    // 1:1 Ubnetwork Next.js: selalu cari data shift hari ini secara ONLINE dulu
+    final onlineRes = await LocalStore.instance.fetchOnlineReport(
+      date: date,
+      shift: shift,
+      lineName: _cfg.lineName,
+    );
+    final existingLocal = await LocalStore.instance.getReport(id);
+    final prev = onlineRes.online
+        ? await LocalStore.instance.fetchOnlinePrevFinish(
+            targetDate: date,
+            targetShift: shift,
+            lineName: _cfg.lineName,
+          )
+        : await LocalStore.instance.findLatestPrevFinish(date, shift, false);
 
     ChecksheetReport loaded;
-    if (existing != null) {
-      loaded = existing;
+    if (onlineRes.online && onlineRes.found && onlineRes.report != null) {
+      loaded = onlineRes.report!;
+    } else if (existingLocal != null) {
+      loaded = existingLocal;
     } else {
       final dtObj = DateTime.tryParse(date);
       final isFri = dtObj != null && dtObj.weekday == DateTime.friday;
@@ -141,8 +162,12 @@ class _ChecksheetScreenState extends State<ChecksheetScreen> {
     setState(() {
       _rep = loaded;
       _prevCarry = prev;
+      _isOnline = onlineRes.online;
       _loading = false;
     });
+    if (!onlineRes.online) {
+      _toast('Koneksi offline — data shift $shift ($date) memakai cache lokal', isErr: true);
+    }
   }
 
   Future<void> _persistLocal({bool silent = false}) async {
@@ -358,7 +383,50 @@ class _ChecksheetScreenState extends State<ChecksheetScreen> {
                     icon: const Icon(Icons.chevron_right_rounded, size: 20),
                     visualDensity: VisualDensity.compact,
                   ),
+                  if (rep != null)
+                    InkWell(
+                      onTap: () {
+                        final nextShift = rep.shift == 'RED' ? 'WHITE' : 'RED';
+                        _loadReport(rep.tanggal, nextShift);
+                      },
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: rep.shift == 'RED'
+                              ? UbColors.rose.withValues(alpha: 0.18)
+                              : Colors.white.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: rep.shift == 'RED'
+                                ? UbColors.rose.withValues(alpha: 0.55)
+                                : Colors.white.withValues(alpha: 0.35),
+                          ),
+                        ),
+                        child: Text(
+                          rep.shift,
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w900,
+                            color: rep.shift == 'RED' ? const Color(0xFFFDA4AF) : Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
                   const Spacer(),
+                  // Online / Refresh Server Status
+                  IconButton(
+                    onPressed: _loading || rep == null
+                        ? null
+                        : () => _loadReport(rep.tanggal, rep.shift),
+                    icon: Icon(
+                      _isOnline ? Icons.wifi_rounded : Icons.wifi_off_rounded,
+                      size: 18,
+                      color: _isOnline ? UbColors.emerald : UbColors.rose,
+                    ),
+                    tooltip: _isOnline ? 'Online · Muat ulang data server' : 'Offline · Coba hubungkan ulang',
+                    visualDensity: VisualDensity.compact,
+                  ),
                   // Sync Status Dot
                   Container(
                     width: 10,

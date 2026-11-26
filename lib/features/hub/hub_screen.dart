@@ -599,6 +599,22 @@ class _HubScreenState extends State<HubScreen> {
                           ),
                         ),
                       ),
+                      if (widget.onLogout != null) ...[
+                        const SizedBox(width: 6),
+                        InkWell(
+                          onTap: widget.onLogout,
+                          borderRadius: BorderRadius.circular(10),
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: UbColors.rose.withValues(alpha: 0.14),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: UbColors.rose.withValues(alpha: 0.4)),
+                            ),
+                            child: const Icon(Icons.logout_rounded, size: 14, color: Color(0xFFFDA4AF)),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
