@@ -5,6 +5,31 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      play_track:
+        description: 'Google Play Track (pilih none untuk skip upload Play Store)'
+        required: true
+        type: choice
+        default: 'internal'
+        options:
+          - internal
+          - alpha
+          - beta
+          - production
+          - none
+      play_status:
+        description: 'Status rilis Play Store'
+        required: true
+        type: choice
+        default: 'completed'
+        options:
+          - completed
+          - draft
+      release_notes:
+        description: 'Catatan rilis (opsional)'
+        required: false
+        type: string
+        default: ''
 
 concurrency:
   group: build-ubnetwork-flutter-apk
@@ -180,6 +205,47 @@ jobs:
           files: |
             UBnetwork-v${{ steps.meta.outputs.version_name }}-code${{ steps.meta.outputs.version_code }}-release.apk
             UBnetwork-v${{ steps.meta.outputs.version_name }}-code${{ steps.meta.outputs.version_code }}-release.aab
+
+      - name: Validate Play Store Credentials & Notes
+        if: github.event_name == 'workflow_dispatch' && inputs.play_track != 'none'
+        id: play_prep
+        env:
+          SA_JSON: ${{ secrets.PLAY_STORE_SERVICE_ACCOUNT_JSON }}
+          RAW_NOTES: ${{ inputs.release_notes }}
+        run: |
+          if [ -z "$SA_JSON" ]; then
+            echo "::error::Secret PLAY_STORE_SERVICE_ACCOUNT_JSON belum diisi di repository tmminunion/ubnetworkFlutter!"
+            exit 1
+          fi
+
+          if [ -n "$RAW_NOTES" ]; then
+            mkdir -p /tmp/play-whatsnew
+            printf '%s\n' "$RAW_NOTES" > /tmp/play-whatsnew/whatsnew-id
+            echo "has_notes=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_notes=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Publish AAB to Google Play Store (with Release Notes)
+        if: github.event_name == 'workflow_dispatch' && inputs.play_track != 'none' && steps.play_prep.outputs.has_notes == 'true'
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_STORE_SERVICE_ACCOUNT_JSON }}
+          packageName: com.ubnetwork.apps
+          releaseFiles: UBnetwork-v${{ steps.meta.outputs.version_name }}-code${{ steps.meta.outputs.version_code }}-release.aab
+          tracks: ${{ inputs.play_track }}
+          status: ${{ inputs.play_status }}
+          whatsNewDirectory: /tmp/play-whatsnew
+
+      - name: Publish AAB to Google Play Store
+        if: github.event_name == 'workflow_dispatch' && inputs.play_track != 'none' && steps.play_prep.outputs.has_notes != 'true'
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_STORE_SERVICE_ACCOUNT_JSON }}
+          packageName: com.ubnetwork.apps
+          releaseFiles: UBnetwork-v${{ steps.meta.outputs.version_name }}-code${{ steps.meta.outputs.version_code }}-release.aab
+          tracks: ${{ inputs.play_track }}
+          status: ${{ inputs.play_status }}
 
       - name: Send APK & AAB Link to Telegram
         if: always()
