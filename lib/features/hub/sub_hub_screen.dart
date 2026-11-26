@@ -9,7 +9,11 @@ import '../productivity/ckd_monitoring_screen.dart';
 import '../productivity/chokotei_manual_screen.dart';
 import '../productivity/attendance_screen.dart';
 import '../productivity/prod_monitoring_screen.dart';
+import '../productivity/after_prod_screen.dart';
+import '../productivity/prod_kaizen_screen.dart';
 import '../productivity/roster_screen.dart';
+import '../productivity/shift_template_screen.dart';
+import '../productivity/task_hub_screen.dart';
 import '../quality/quality_daily_screen.dart';
 import '../safety/kyt_monitoring_screen.dart';
 import '../safety/safety_temuan_screen.dart';
@@ -131,6 +135,34 @@ class SubHubScreen extends StatelessWidget {
     if (mod.route == '/productivity/chokotei-manual') {
       Navigator.of(context).push(
         MaterialPageRoute<void>(builder: (_) => const ChokoteiManualScreen()),
+      );
+      return;
+    }
+
+    if (mod.route == '/productivity/after-prod') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const AfterProdScreen()),
+      );
+      return;
+    }
+
+    if (mod.route == '/productivity/tasks') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const TaskHubScreen()),
+      );
+      return;
+    }
+
+    if (mod.route == '/productivity/shift-template') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const ShiftTemplateScreen()),
+      );
+      return;
+    }
+
+    if (mod.route == '/productivity/kaizen') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const ProdKaizenScreen()),
       );
       return;
     }

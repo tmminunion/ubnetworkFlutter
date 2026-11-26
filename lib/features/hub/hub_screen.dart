@@ -13,6 +13,8 @@ import '../quick/henkaten_board_screen.dart';
 import '../quick/postit_board_screen.dart';
 import '../quick/ubdrive_screen.dart';
 import 'display_board_screen.dart';
+import '../productivity/after_prod_screen.dart';
+import '../productivity/task_hub_screen.dart';
 import '../safety/sga_group_screen.dart';
 import 'sub_hub_screen.dart';
 
@@ -143,8 +145,16 @@ class _HubScreenState extends State<HubScreen> {
       );
       return;
     }
-    if (route == '/productivity/tasks' || route == '/productivity/after-prod') {
-      _openSubHub('productivity');
+    if (route == '/productivity/tasks') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const TaskHubScreen()),
+      );
+      return;
+    }
+    if (route == '/productivity/after-prod') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const AfterProdScreen()),
+      );
       return;
     }
     if (route == '/env/daily' || route == '/env/temuan') {

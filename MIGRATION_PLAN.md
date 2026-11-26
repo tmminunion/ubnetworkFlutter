@@ -17,7 +17,7 @@ Dokumen ini menjadi acuan resmi migrasi 1:1 dari `ubnetwork` (Next.js Web) ke `u
 | :--- | :--- | :--- | :--- |
 | `/` (Home Hub) | Top Bar macOS, Display & Monitor, 6 Pilar `SQPCEHR`, 5 Kaizen, 11 Quick App | **Selesai (1:1)** | `lib/features/hub/hub_screen.dart` |
 | `/display` (GL Board Hub) | 7 Pilar × 4 Kertas KPI (28 board) | **Shell 1:1** | `lib/features/hub/display_board_screen.dart` |
-| `/productivity` | 14 modul | **10 / 14 Native** | `checksheet`, `print`, `settings`, `monitoring`, `chokotei`, `manual`, `cbu`, `ckd`, `roster`, `absensi` |
+| `/productivity` | 14 modul | **14 / 14 Native** | **Selesai 100%** (Checksheet A3, Print, Settings, Monitoring, Chokotei, Manual, CBU, CKD, Roster, Absensi, After-Prod 5S, Task Hub, Shift Template, Kaizen Report) |
 | `/safety` | 8 modul | **6 / 8 Native** | Semua 6 modul operasional Safety selesai (sisa 2 board Display/Slide di Fase 6) |
 | `/quality` | 6 modul | **2 / 6 Native** | Semua modul operasional Quality (`out` & `in`) selesai (sisa 4 Display di Fase 6) |
 | `/cost` | 6 modul | **Shell 1:1** | Target Fase 4 |
@@ -47,12 +47,12 @@ Dokumen ini menjadi acuan resmi migrasi 1:1 dari `ubnetwork` (Next.js Web) ke `u
 - [x] **2.1** `/quality/daily/out` — Defect Out Flow (Red & White terpisah, Grafik D/U, Tabel 1–31, Zero Defect, Temuan CRUD)
 - [x] **2.2** `/quality/daily/in` — Defect In Proses (Red & White terpisah, Grafik D/U, Tabel 1–31, Zero Defect, Temuan CRUD)
 
-### Fase 3 — Pilar Productivity Lanjutan (`/productivity`)
+### Fase 3 — Pilar Productivity Lanjutan (`/productivity`) — **SELESAI 14/14 NATIVE**
 - [x] **3.1** `/productivity/monitoring` — Monitoring Produksi & Efisiensi 1–31 (6 KPI Cards, Grafik Tren 1–31, Tabel + Link langsung ke Checksheet A3)
 - [x] **3.2** `/productivity/chokotei` & `/productivity/chokotei-manual` (Pareto 80/20 Mesin, Action Plan PIC + Live Sync, Chokotei Manual CRUD)
 - [x] **3.3** `/productivity/cbu` & `/productivity/ckd` (Monitoring Model CBU & Part CKD Export 1–31, Rasio Komparasi, Live Sync + Offline)
 - [x] **3.4** `/productivity/roster` & `/productivity/absensi` (Struktural Tim GL/TL/TM + Permanen/Kontrak/Vokasi, Matriks Absensi 1–31, Ranking Sering Absen)
-- [ ] **3.5** `/productivity/after-prod`, `/productivity/tasks`, `/productivity/shift-template`, `/productivity/kaizen`
+- [x] **3.5** `/productivity/after-prod`, `/productivity/tasks`, `/productivity/shift-template`, `/productivity/kaizen` (UBAI After-Prod 5S Generator + Swap + WA Copy, Task Manager Post-It + Gantt Auto-Urgency, Master Shift Template + Simulasi Takt Time, Kaizen Report Productivity)
 
 ### Fase 4 — Pilar Cost (`/cost`) & Environment (`/env`)
 - [ ] **4.1** `/cost/daily` & `/cost/temuan`
@@ -68,5 +68,5 @@ Dokumen ini menjadi acuan resmi migrasi 1:1 dari `ubnetwork` (Next.js Web) ke `u
 - [ ] **6.2** `/monitor` — Slide Show TV Shopfloor
 
 ### Fase 7 — Quick App Dx & Aktivitas Kaizen
-- [x] **7.1** Henkaten Board, Post-It Board, UBdrive, Dokumentasi *(Andon dihapus dari Hub)*
+- [ ] **7.1** Henkaten Board, Post-It Board, UBdrive, Andon Live Monitor, Dokumentasi
 - [ ] **7.2** QCC, TPM, 5R / 5S, SW Observasi
