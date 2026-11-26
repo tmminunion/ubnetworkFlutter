@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
   actions: write
 
 jobs:
@@ -76,10 +76,18 @@ jobs:
           flutter build apk --release \
             --build-name="${{ steps.meta.outputs.version_name }}" \
             --build-number="${{ steps.meta.outputs.version_code }}"
+          cp build/app/outputs/flutter-apk/app-release.apk "UBnetwork-v${{ steps.meta.outputs.version_name }}-code${{ steps.meta.outputs.version_code }}-release.apk"
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: UBnetwork-v${{ steps.meta.outputs.version_name }}-code${{ steps.meta.outputs.version_code }}-release
-          path: build/app/outputs/flutter-apk/app-release.apk
+          path: UBnetwork-v${{ steps.meta.outputs.version_name }}-code${{ steps.meta.outputs.version_code }}-release.apk
           retention-days: 30
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.meta.outputs.version_name }}+${{ steps.meta.outputs.version_code }}
+          name: UBnetwork v${{ steps.meta.outputs.version_name }} (Build ${{ steps.meta.outputs.version_code }})
+          files: UBnetwork-v${{ steps.meta.outputs.version_name }}-code${{ steps.meta.outputs.version_code }}-release.apk
