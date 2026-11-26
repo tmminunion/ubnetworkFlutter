@@ -1057,64 +1057,319 @@ class _AfterProdScreenState extends State<AfterProdScreen> {
     );
   }
 
+  Widget _jobPill({
+    required String label,
+    required Color color,
+    IconData? icon,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.35), width: 0.8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 11, color: color),
+            const SizedBox(width: 3),
+          ],
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              color: color,
+              letterSpacing: 0.2,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _confirmDeleteJob(AfterProdJob j) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: UbColors.surface,
+        title: const Text('Hapus Pekerjaan?', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15)),
+        content: Text(
+          'Hapus "${j.name}" dari daftar pekerjaan $_shift?',
+          style: const TextStyle(color: UbColors.textMuted, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Batal'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: UbColors.rose),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Hapus', style: TextStyle(fontWeight: FontWeight.w800)),
+          ),
+        ],
+      ),
+    );
+    if (ok == true) {
+      await ProductivityOpsStore.instance.deleteAfterJob(_shift, j.id);
+      await _load();
+    }
+  }
+
   Widget _buildJobsTab() {
+    final activeJobs = _jobs.where((j) => j.isActive).toList();
+    final inactiveCount = _jobs.length - activeJobs.length;
+    final totalMpNeeded = activeJobs.fold<int>(0, (sum, j) => sum + j.requiredPeople);
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: UbColors.cyan,
         foregroundColor: UbColors.bg,
+        elevation: 4,
         onPressed: () => _openJobForm(),
-        icon: const Icon(Icons.add_rounded),
-        label: const Text('Tambah Job', style: TextStyle(fontWeight: FontWeight.w900)),
+        icon: const Icon(Icons.add_rounded, size: 20),
+        label: const Text('Tambah Job', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 13)),
       ),
-      body: ListView.builder(
-        padding: const EdgeInsets.fromLTRB(12, 4, 12, 84),
-        itemCount: _jobs.length,
-        itemBuilder: (_, idx) {
-          final j = _jobs[idx];
-          return Card(
-            margin: const EdgeInsets.only(bottom: 8),
-            child: ListTile(
-              leading: Text(j.emoji, style: const TextStyle(fontSize: 22)),
-              title: Text(
-                j.name,
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 13,
-                  color: j.isActive ? Colors.white : UbColors.textMuted,
-                ),
-              ),
-              subtitle: Text(
-                '${j.scope} · Butuh ${j.requiredPeople} MP · ${j.allowedStatuses.length >= 3 ? 'Semua Status' : j.allowedStatuses.join(', ')}',
-                style: const TextStyle(fontSize: 11, color: UbColors.textMuted),
-              ),
-              trailing: Row(
+      body: _jobs.isEmpty
+          ? Center(
+              child: Column(
                 mainAxisSize: MainAxisSize.min,
-                children: [
-                  Switch(
-                    value: j.isActive,
-                    onChanged: (v) async {
-                      await ProductivityOpsStore.instance.saveAfterJob(_shift, j.copyWith(isActive: v));
-                      await _load();
-                    },
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.edit_rounded, size: 18, color: UbColors.cyan),
-                    onPressed: () => _openJobForm(j),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline_rounded, size: 18, color: UbColors.rose),
-                    onPressed: () async {
-                      await ProductivityOpsStore.instance.deleteAfterJob(_shift, j.id);
-                      await _load();
-                    },
+                children: const [
+                  Icon(Icons.work_outline_rounded, size: 40, color: UbColors.textMuted),
+                  SizedBox(height: 8),
+                  Text(
+                    'Belum ada daftar pekerjaan',
+                    style: TextStyle(color: UbColors.textMuted, fontWeight: FontWeight.w700),
                   ),
                 ],
               ),
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 92),
+              itemCount: _jobs.length + 1,
+              itemBuilder: (_, index) {
+                if (index == 0) {
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                    decoration: BoxDecoration(
+                      color: UbColors.surface.withValues(alpha: 0.9),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: UbColors.border.withValues(alpha: 0.7)),
+                    ),
+                    child: Row(
+                      children: [
+                        _jobPill(
+                          label: '${activeJobs.length} Aktif',
+                          color: UbColors.emerald,
+                          icon: Icons.check_circle_rounded,
+                        ),
+                        const SizedBox(width: 6),
+                        if (inactiveCount > 0) ...[
+                          _jobPill(
+                            label: '$inactiveCount Off',
+                            color: UbColors.textMuted,
+                            icon: Icons.pause_circle_outline_rounded,
+                          ),
+                          const SizedBox(width: 6),
+                        ],
+                        const Spacer(),
+                        _jobPill(
+                          label: 'Total $totalMpNeeded MP',
+                          color: UbColors.cyan,
+                          icon: Icons.groups_rounded,
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                final j = _jobs[index - 1];
+                final scopeUpper = j.scope.toUpperCase();
+                final scopeColor = scopeUpper == 'COMMON'
+                    ? UbColors.amber
+                    : (scopeUpper == 'RED' ? UbColors.rose : UbColors.primaryBlue);
+                final statusLabel = j.allowedStatuses.length >= 3
+                    ? 'Semua Status'
+                    : j.allowedStatuses.join(', ');
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  decoration: BoxDecoration(
+                    color: j.isActive
+                        ? UbColors.surface
+                        : UbColors.surface.withValues(alpha: 0.55),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: j.isActive
+                          ? UbColors.cyan.withValues(alpha: 0.28)
+                          : UbColors.border.withValues(alpha: 0.55),
+                      width: 1,
+                    ),
+                    boxShadow: j.isActive
+                        ? [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.25),
+                              blurRadius: 8,
+                              offset: const Offset(0, 3),
+                            ),
+                          ]
+                        : null,
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(13),
+                    child: IntrinsicHeight(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Container(
+                            width: 3.5,
+                            color: j.isActive
+                                ? UbColors.cyan
+                                : UbColors.border.withValues(alpha: 0.6),
+                          ),
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(12, 11, 10, 10),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    crossAxisAlignment: CrossAxisAlignment.center,
+                                    children: [
+                                      Container(
+                                        width: 38,
+                                        height: 38,
+                                        alignment: Alignment.center,
+                                        decoration: BoxDecoration(
+                                          color: (j.isActive ? UbColors.cyan : UbColors.textMuted)
+                                              .withValues(alpha: 0.12),
+                                          borderRadius: BorderRadius.circular(10),
+                                          border: Border.all(
+                                            color: (j.isActive ? UbColors.cyan : UbColors.border)
+                                                .withValues(alpha: 0.28),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          j.emoji,
+                                          style: const TextStyle(fontSize: 19),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Text(
+                                          j.name,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 13.5,
+                                            height: 1.25,
+                                            color: j.isActive ? UbColors.textPrimary : UbColors.textMuted,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Transform.scale(
+                                        scale: 0.8,
+                                        alignment: Alignment.centerRight,
+                                        child: Switch(
+                                          value: j.isActive,
+                                          activeThumbColor: UbColors.bg,
+                                          activeTrackColor: UbColors.cyan,
+                                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                          onChanged: (v) async {
+                                            await ProductivityOpsStore.instance
+                                                .saveAfterJob(_shift, j.copyWith(isActive: v));
+                                            await _load();
+                                          },
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 9),
+                                  Row(
+                                    crossAxisAlignment: CrossAxisAlignment.center,
+                                    children: [
+                                      Expanded(
+                                        child: Wrap(
+                                          spacing: 6,
+                                          runSpacing: 5,
+                                          children: [
+                                            _jobPill(label: scopeUpper, color: scopeColor),
+                                            _jobPill(
+                                              label: '${j.requiredPeople} MP',
+                                              color: UbColors.cyan,
+                                              icon: Icons.person_outline_rounded,
+                                            ),
+                                            _jobPill(
+                                              label: statusLabel,
+                                              color: UbColors.purple,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      InkWell(
+                                        onTap: () => _openJobForm(j),
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: Container(
+                                          width: 32,
+                                          height: 32,
+                                          alignment: Alignment.center,
+                                          decoration: BoxDecoration(
+                                            color: UbColors.cyan.withValues(alpha: 0.12),
+                                            borderRadius: BorderRadius.circular(8),
+                                            border: Border.all(
+                                              color: UbColors.cyan.withValues(alpha: 0.3),
+                                            ),
+                                          ),
+                                          child: const Icon(
+                                            Icons.edit_rounded,
+                                            size: 16,
+                                            color: UbColors.cyan,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      InkWell(
+                                        onTap: () => _confirmDeleteJob(j),
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: Container(
+                                          width: 32,
+                                          height: 32,
+                                          alignment: Alignment.center,
+                                          decoration: BoxDecoration(
+                                            color: UbColors.rose.withValues(alpha: 0.12),
+                                            borderRadius: BorderRadius.circular(8),
+                                            border: Border.all(
+                                              color: UbColors.rose.withValues(alpha: 0.3),
+                                            ),
+                                          ),
+                                          child: const Icon(
+                                            Icons.delete_outline_rounded,
+                                            size: 16,
+                                            color: UbColors.rose,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
-          );
-        },
-      ),
     );
   }
 
