@@ -22,18 +22,19 @@ Semua kebutuhan teknis build & signing untuk Google Play Store sudah disiapkan o
   - `assets/playstore/screenshot_3_sync_pdf.png`
 - **Launcher & Adaptive Icon:** `assets/icon/app_icon.png` & `assets/icon/app_icon_foreground.png` (otomatis digenerate ke `mipmap-*` saat build via `flutter_launcher_icons`).
 
-## 3. Teks Store Listing (Siap Copy-Paste)
+## 3. Teks Store Listing (Global & Sesuai Kebijakan)
 - **Short Description (maks 80 karakter):**
-  `Checksheet produksi A3 offline-first dengan zoom, sync & export PDF A4.`
+  `Aplikasi Record Daily Control, lembar kerja digital interaktif & ekspor PDF.`
 - **Full Description:**
   ```text
-  UBnetwork adalah aplikasi checksheet produksi harian (Kanvas Kertas A3) berbasis offline-first untuk kebutuhan pencatatan lini produksi Underbody Assy.
+  UBnetwork adalah aplikasi utilitas Record Daily Control dan manajemen lembar kerja digital interaktif berbasis offline-first untuk pencatatan aktivitas harian, pemantauan target berkala, kolaborasi tim, dan dokumentasi kerja terstruktur.
 
   Fitur Utama:
-  • Kanvas A3 Interaktif: Zoom cubit 2 jari, geser bebas, tombol zoom presisi, Fit-Width, dan navigasi D-Pad.
-  • Input Langsung di Kertas: Tap sel untuk mengisi Plan, Aktual, Absensi MP, Chokotei, dan catatan shift (RED/WHITE, DAY/NIGHT).
-  • Offline-First + 1-Click Sync: Data tersimpan otomatis di perangkat dan dapat disinkronkan ke server produksi saat online.
-  • Export & Cetak PDF A4: Cetak langsung checksheet ke PDF resolusi tinggi.
+  • Record Daily Control (Kanvas Lembar Kerja Digital): Navigasi kanvas interaktif dengan fitur cubit dua jari (pinch-to-zoom), geser bebas ke segala arah, kontrol presisi ukuran layar, serta tampilan lembar kerja yang rapi dan responsif.
+  • Pencatatan Langsung & Praktis: Ketuk langsung pada kolom lembar kerja untuk mencatat rencana harian, capaian aktual, kehadiran anggota tim, evaluasi kendala, serta catatan tindak lanjut.
+  • Manajemen Aktivitas & Kolaborasi: Dilengkapi papan catatan tugas harian, jadwal kegiatan berkala, evaluasi peningkatan berkelanjutan, serta pengelolaan dokumen kerja dalam satu aplikasi terpadu.
+  • Offline-First & Sinkronisasi Cloud: Data tersimpan otomatis di perangkat meskipun tanpa koneksi internet dan dapat disinkronkan secara aman ke cloud kapan saja.
+  • Ekspor & Cetak Dokumen PDF: Ekspor lembar kerja harian langsung ke format dokumen PDF beresolusi tinggi yang siap dibagikan atau dicetak.
   ```
 
 ## 4. Langkah Upload di Google Play Console

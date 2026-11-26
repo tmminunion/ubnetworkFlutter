@@ -29,7 +29,7 @@ on:
         description: 'Catatan rilis (opsional)'
         required: false
         type: string
-        default: ''
+        default: 'Pembaruan fitur Record Daily Control, kanvas lembar kerja digital interaktif, manajemen aktivitas harian, sinkronisasi cloud, serta peningkatan performa aplikasi.'
 
 concurrency:
   group: build-ubnetwork-flutter-apk
@@ -246,6 +246,105 @@ jobs:
           releaseFiles: UBnetwork-v${{ steps.meta.outputs.version_name }}-code${{ steps.meta.outputs.version_code }}-release.aab
           tracks: ${{ inputs.play_track }}
           status: ${{ inputs.play_status }}
+
+      - name: Sync Global Store Listing Description to Google Play
+        if: github.event_name == 'workflow_dispatch' && inputs.play_track != 'none'
+        env:
+          SA_JSON: ${{ secrets.PLAY_STORE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          python3 -m pip install --quiet google-auth requests
+          python3 - <<'PYEOF'
+          import json
+          import os
+          import requests
+          from google.auth.transport.requests import Request
+          from google.oauth2 import service_account
+
+          sa_raw = os.environ.get("SA_JSON", "").strip()
+          if not sa_raw:
+              print("No SA_JSON; skipping listing sync.")
+              raise SystemExit(0)
+
+          creds = service_account.Credentials.from_service_account_info(
+              json.loads(sa_raw),
+              scopes=["https://www.googleapis.com/auth/androidpublisher"],
+          )
+          creds.refresh(Request())
+          headers = {
+              "Authorization": f"Bearer {creds.token}",
+              "Content-Type": "application/json",
+          }
+          base = "https://androidpublisher.googleapis.com/androidpublisher/v3/applications/com.ubnetwork.apps/edits"
+
+          try:
+              r_edit = requests.post(base, headers=headers, json={}, timeout=30)
+              r_edit.raise_for_status()
+              edit_id = r_edit.json()["id"]
+
+              r_list = requests.get(f"{base}/{edit_id}/listings", headers=headers, timeout=30)
+              r_list.raise_for_status()
+              listings = r_list.json().get("listings", [])
+              langs = [item.get("language") for item in listings if item.get("language")] or ["id"]
+              titles = {item.get("language"): item.get("title") for item in listings if item.get("language")}
+
+              id_short = "Aplikasi Record Daily Control, lembar kerja digital interaktif & ekspor PDF."
+              id_full = (
+                  "UBnetwork adalah aplikasi utilitas Record Daily Control dan manajemen lembar kerja digital interaktif "
+                  "berbasis offline-first untuk pencatatan aktivitas harian, pemantauan target berkala, kolaborasi tim, "
+                  "dan dokumentasi kerja terstruktur.\n\n"
+                  "Fitur Utama:\n"
+                  "• Record Daily Control (Kanvas Lembar Kerja Digital): Navigasi kanvas interaktif dengan fitur cubit dua jari "
+                  "(pinch-to-zoom), geser bebas ke segala arah, kontrol presisi ukuran layar, serta tampilan lembar kerja yang rapi dan responsif.\n"
+                  "• Pencatatan Langsung & Praktis: Ketuk langsung pada kolom lembar kerja untuk mencatat rencana harian, "
+                  "capaian aktual, kehadiran anggota tim, evaluasi kendala, serta catatan tindak lanjut.\n"
+                  "• Manajemen Aktivitas & Kolaborasi: Dilengkapi papan catatan tugas harian, jadwal kegiatan berkala, "
+                  "evaluasi peningkatan berkelanjutan, serta pengelolaan dokumen kerja dalam satu aplikasi terpadu.\n"
+                  "• Offline-First & Sinkronisasi Cloud: Data tersimpan otomatis di perangkat meskipun tanpa koneksi internet "
+                  "dan dapat disinkronkan secara aman ke cloud kapan saja.\n"
+                  "• Ekspor & Cetak Dokumen PDF: Ekspor lembar kerja harian langsung ke format dokumen PDF beresolusi tinggi "
+                  "yang siap dibagikan atau dicetak."
+              )
+
+              en_short = "Record Daily Control app with interactive digital worksheet, sync & PDF export."
+              en_full = (
+                  "UBnetwork is an offline-first Record Daily Control utility and interactive digital worksheet hub designed for "
+                  "structured daily activity tracking, periodic goal monitoring, team collaboration, and document management.\n\n"
+                  "Key Features:\n"
+                  "• Record Daily Control (Interactive Digital Canvas): Smooth pinch-to-zoom, free panning, precision zoom controls, "
+                  "and a responsive digital worksheet interface.\n"
+                  "• Direct Tap-to-Edit Recording: Tap any worksheet field to log daily plans, actual progress, team attendance, "
+                  "issue tracking, and follow-up notes.\n"
+                  "• Daily Task & Activity Hub: Includes sticky task boards, periodic schedules, continuous improvement tracking, "
+                  "and document organization in one unified workspace.\n"
+                  "• Offline-First & Cloud Sync: Records are saved locally on your device automatically and can be synced securely "
+                  "when connected online.\n"
+                  "• High-Resolution PDF Export: Export and print clean daily control worksheets directly to PDF."
+              )
+
+              for lang in langs:
+                  is_en = lang.lower().startswith("en")
+                  body = {
+                      "language": lang,
+                      "title": titles.get(lang) or "UBnetwork",
+                      "shortDescription": en_short if is_en else id_short,
+                      "fullDescription": en_full if is_en else id_full,
+                  }
+                  ru = requests.put(f"{base}/{edit_id}/listings/{lang}", headers=headers, json=body, timeout=30)
+                  ru.raise_for_status()
+                  print(f"Updated Google Play Store listing for language: {lang}")
+
+              rc = requests.post(f"{base}/{edit_id}:commit", headers=headers, timeout=30)
+              if rc.status_code == 400 and "changesNotSentForReview" in rc.text:
+                  rc = requests.post(
+                      f"{base}/{edit_id}:commit?changesNotSentForReview=true",
+                      headers=headers,
+                      timeout=30,
+                  )
+              rc.raise_for_status()
+              print("Successfully committed global Store Listing description to Google Play!")
+          except Exception as exc:
+              print(f"::warning::Store listing sync warning (AAB upload unaffected): {exc}")
+          PYEOF
 
       - name: Send APK & AAB Link to Telegram
         if: always()
