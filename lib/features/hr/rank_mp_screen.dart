@@ -13,7 +13,7 @@ class RankMpScreen extends StatefulWidget {
 
 class _RankMpScreenState extends State<RankMpScreen> with SingleTickerProviderStateMixin {
   late final TabController _tabCtrl;
-  String _ym = hrTodayYmd().substring(0, 7);
+  final String _ym = hrTodayYmd().substring(0, 7);
   String _shift = 'RED';
   String _search = '';
   String _tierFilter = 'ALL';
