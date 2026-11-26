@@ -1131,8 +1131,7 @@ class _DisplayPaperScreenState extends State<DisplayPaperScreen> {
                       Padding(
                         padding: const EdgeInsets.all(5),
                         child: Text(
-                          (r['schedule'] is List ? (r['schedule'] as List).join('
-') : ''),
+                          (r['schedule'] is List ? (r['schedule'] as List).join('\n') : ''),
                           style: const TextStyle(fontSize: 9.5, color: Color(0xFF0F766E)),
                         ),
                       ),
