@@ -66,10 +66,16 @@ jobs:
           BASE_NAME=${VER_RAW%%+*}
           BASE_CODE=${VER_RAW##*+}
           IFS='.' read -r VER_MAJOR VER_MINOR VER_PATCH <<< "$BASE_NAME"
+          VER_MAJOR=${VER_MAJOR:-1}
+          VER_MINOR=${VER_MINOR:-0}
           VER_PATCH=${VER_PATCH:-0}
-          NEXT_PATCH=$((VER_PATCH + GITHUB_RUN_NUMBER))
-          VER_NAME="${VER_MAJOR}.${VER_MINOR}.${NEXT_PATCH}"
-          VER_CODE=$((BASE_CODE + GITHUB_RUN_NUMBER))
+          TOTAL_STEPS=$(( 10#$VER_MAJOR * 1000 + 10#$VER_MINOR * 100 + 10#$VER_PATCH + GITHUB_RUN_NUMBER ))
+          CALC_MAJOR=$(( TOTAL_STEPS / 1000 ))
+          REM_MAJOR=$(( TOTAL_STEPS % 1000 ))
+          CALC_MINOR=$(( REM_MAJOR / 100 ))
+          CALC_PATCH=$(( REM_MAJOR % 100 ))
+          VER_NAME="${CALC_MAJOR}.${CALC_MINOR}.${CALC_PATCH}"
+          VER_CODE=$(( 10#$BASE_CODE + GITHUB_RUN_NUMBER ))
           echo "Resolved build version: v${VER_NAME} (code ${VER_CODE})"
           echo "version_name=${VER_NAME}" >> "$GITHUB_OUTPUT"
           echo "version_code=${VER_CODE}" >> "$GITHUB_OUTPUT"
