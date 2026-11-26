@@ -1053,16 +1053,20 @@ class LocalStore {
     }
 
     // 6. Monthly Plan CCR & No Body Start/Finish auto-carry
+    double? parseDoubleVal(Object? v) =>
+        v is num ? v.toDouble() : double.tryParse('${v ?? ''}'.trim());
+    int? parseIntVal(Object? v) =>
+        v is num ? v.toInt() : int.tryParse('${v ?? ''}'.trim());
+
     final mp = decoded['monthly_plan'] is Map
         ? Map<String, dynamic>.from(decoded['monthly_plan'] as Map)
         : null;
     final mpCcr = mp != null
-        ? ((sh == 'RED' ? (mp['red_plan'] ?? mp['day_plan']) : (mp['white_plan'] ?? mp['day_plan'])) as num?)
-                ?.toInt() ??
-            0
+        ? (parseIntVal(sh == 'RED' ? (mp['red_plan'] ?? mp['day_plan']) : (mp['white_plan'] ?? mp['day_plan'])) ?? 0)
         : 0;
-    final ccrPlan = ((lap['ccr_plan'] as num?)?.toInt() ?? 0) > 0
-        ? (lap['ccr_plan'] as num).toInt()
+    final lapCcr = parseIntVal(lap['ccr_plan']) ?? 0;
+    final ccrPlan = lapCcr > 0
+        ? lapCcr
         : (mpCcr > 0 ? mpCcr : (sh == 'RED' ? cfg.ccrTargetRed : cfg.ccrTargetWhite));
 
     var noBodyStart = (lap['no_body_start'] ?? '').toString().trim();
@@ -1074,20 +1078,12 @@ class LocalStore {
       noBodyFinish = UbMasterData.addNumberPreservePad(noBodyStart, ccrPlan - 1);
     }
 
-    final actOtH = (lap['act_ot_hours'] ?? lap['overtime_hours'] as num?)?.toDouble() ??
-        double.tryParse('${lap['act_ot_hours'] ?? lap['overtime_hours'] ?? 0}') ??
-        0;
-    final actOtU = (lap['act_ot_units'] as num?)?.toInt() ??
-        int.tryParse('${lap['act_ot_units'] ?? 0}') ??
-        0;
-    final otPlanH = (lap['ot_plan_hours'] as num?)?.toDouble() ??
-        double.tryParse('${lap['ot_plan_hours'] ?? ''}');
-    final otPlanU = (lap['ot_plan_units'] as num?)?.toInt() ??
-        int.tryParse('${lap['ot_plan_units'] ?? ''}');
-    final directIntD = (lap['int_delay_min'] as num?)?.toDouble() ??
-        double.tryParse('${lap['int_delay_min'] ?? ''}');
-    final directExtD = (lap['ext_delay_min'] as num?)?.toDouble() ??
-        double.tryParse('${lap['ext_delay_min'] ?? ''}');
+    final actOtH = parseDoubleVal(lap['act_ot_hours'] ?? lap['overtime_hours']) ?? 0;
+    final actOtU = parseIntVal(lap['act_ot_units']) ?? 0;
+    final otPlanH = parseDoubleVal(lap['ot_plan_hours']);
+    final otPlanU = parseIntVal(lap['ot_plan_units']);
+    final directIntD = parseDoubleVal(lap['int_delay_min']);
+    final directExtD = parseDoubleVal(lap['ext_delay_min']);
 
     return ChecksheetReport(
       id: UbMasterData.makeReportId(dt, sh, line),

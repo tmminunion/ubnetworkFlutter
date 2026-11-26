@@ -108,9 +108,103 @@ class SafetyRiskMaster {
 
   static const Map<String, String> statusLabels = {
     'open': 'Belum',
-    'progress': 'Proses',
+    'progress': 'On Progres',
     'closed': 'Selesai',
   };
+
+  static const List<String> monthsId = [
+    'Januari',
+    'Februari',
+    'Maret',
+    'April',
+    'Mei',
+    'Juni',
+    'Juli',
+    'Agustus',
+    'September',
+    'Oktober',
+    'November',
+    'Desember',
+  ];
+
+  static const String defaultNudbBase = 'https://nudb.bungtemin.net';
+  static const String defaultWebBase = 'https://ubnetwork.vercel.app';
+
+  static final RegExp _nudbPathRe =
+      RegExp(r'^\/?(?:gambar|images)\/([A-Za-z0-9_-]+(?:\.[A-Za-z0-9]+)?)$');
+  static final RegExp _bareIdRe =
+      RegExp(r'^[A-Za-z0-9_-]{4,}(?:\.(?:jpg|jpeg|png|webp|gif))?$', caseSensitive: false);
+
+  /// 1:1 Dart port of `resolveNudbImageUrl` + `safeMediaUrl` in `ubnetwork/app/lib/nudbImage.ts`.
+  /// Resolves raw NUDB filenames (`ub_xxx.jpg`), relative `/api/media?...` paths,
+  /// and upgrades `http://` bungtemin/toyota URLs to `https://`.
+  static String resolveMediaUrl(
+    String? raw, {
+    String nudbBase = defaultNudbBase,
+    String webBase = defaultWebBase,
+  }) {
+    var trimmed = (raw ?? '').trim();
+    if (trimmed.isEmpty) return '';
+    if (trimmed.startsWith('data:image/')) return trimmed;
+
+    if (trimmed.startsWith('//')) {
+      trimmed = 'https:$trimmed';
+    } else {
+      trimmed = trimmed.replaceFirstMapped(
+        RegExp(
+          r'^http:\/\/((?:[a-z0-9-]+\.)*bungtemin\.net|innovation\.toyota\.co\.id)(?=\/|$)',
+          caseSensitive: false,
+        ),
+        (m) => 'https://${m.group(1)}',
+      );
+    }
+
+    final cleanNudb = nudbBase.replaceAll(RegExp(r'\/+$'), '');
+    final cleanWeb = webBase.replaceAll(RegExp(r'\/+$'), '');
+
+    final pathMatch = _nudbPathRe.firstMatch(trimmed);
+    if (pathMatch != null && pathMatch.group(1) != null) {
+      return '$cleanNudb/gambar/${pathMatch.group(1)}';
+    }
+
+    if (trimmed.startsWith('https://') || trimmed.startsWith('http://')) {
+      return trimmed;
+    }
+    if (trimmed.startsWith('/')) {
+      return '$cleanWeb$trimmed';
+    }
+    if (_bareIdRe.hasMatch(trimmed)) {
+      return '$cleanNudb/gambar/$trimmed';
+    }
+    return '';
+  }
+
+  /// 1:1 Dart port of `kaizenTag(no, pillar)` in `ubnetwork/app/lib/kaizenTag.ts`.
+  static String kaizenTag(String? no, [String pillar = 'S']) {
+    final digits = (no ?? '').replaceAll(RegExp(r'\D'), '');
+    if (digits.isEmpty) return '';
+    return '#${pillar.toUpperCase()}-$digits';
+  }
+
+  /// Formats `YYYY-MM` or `YYYY-MM-DD` into Indonesian month label e.g. `November 2026`.
+  static String formatBulanId(String? dateStr) {
+    final m = RegExp(r'^(\d{4})-(\d{2})').firstMatch((dateStr ?? '').trim());
+    if (m == null) return '-';
+    final year = m.group(1)!;
+    final mo = int.tryParse(m.group(2)!) ?? 0;
+    if (mo < 1 || mo > 12) return '-';
+    return '${monthsId[mo - 1]} $year';
+  }
+
+  /// Computes Toyota Fiscal Year label (`FY26`) from `YYYY-MM-DD` (Apr..Mar).
+  static String fyLabelOf(String? dateStr) {
+    final m = RegExp(r'^(\d{4})-(\d{2})').firstMatch((dateStr ?? '').trim());
+    final now = DateTime.now();
+    final y = m != null ? (int.tryParse(m.group(1)!) ?? now.year) : now.year;
+    final mo = m != null ? (int.tryParse(m.group(2)!) ?? now.month) : now.month;
+    final fy = mo >= 4 ? y : y - 1;
+    return 'FY${(fy % 100).toString().padLeft(2, '0')}';
+  }
 
   static const Map<String, int> rankSeverityWeight = {
     'Aa': 6,
@@ -288,6 +382,7 @@ class SafetyFinding {
     this.status = 'open',
     this.shift = 'white',
     this.foundAt = '',
+    this.closedAt = '',
     this.location = 'UB ASSY',
     this.process = '',
     this.photo = '',
@@ -313,6 +408,7 @@ class SafetyFinding {
   String status; // open | progress | closed
   String shift; // red | white
   String foundAt; // YYYY-MM-DD
+  String closedAt; // YYYY-MM-DD
   String location;
   String process;
   String photo;
@@ -329,6 +425,12 @@ class SafetyFinding {
   String cm;
   SafetyRisk after;
   String syncStatus; // local | synced
+
+  bool get isServerId => RegExp(r'^[sSfF]\d{1,9}$').hasMatch(id.trim());
+
+  String get resolvedPhoto => SafetyRiskMaster.resolveMediaUrl(photo);
+
+  String get resolvedPhotoAfter => SafetyRiskMaster.resolveMediaUrl(photoAfter);
 
   bool get hasKaizenReport =>
       theme.trim().isNotEmpty ||
@@ -352,6 +454,7 @@ class SafetyFinding {
     String? status,
     String? shift,
     String? foundAt,
+    String? closedAt,
     String? location,
     String? process,
     String? photo,
@@ -375,6 +478,7 @@ class SafetyFinding {
         status: status ?? this.status,
         shift: shift ?? this.shift,
         foundAt: foundAt ?? this.foundAt,
+        closedAt: closedAt ?? this.closedAt,
         location: location ?? this.location,
         process: process ?? this.process,
         photo: photo ?? this.photo,
@@ -399,6 +503,7 @@ class SafetyFinding {
         'status': status,
         'shift': shift,
         'foundAt': foundAt,
+        if (closedAt.trim().isNotEmpty) 'closedAt': closedAt,
         'location': location,
         'process': process,
         'photo': photo,
@@ -417,6 +522,29 @@ class SafetyFinding {
         'syncStatus': syncStatus,
       };
 
+  /// Clean payload matching `sanitize(body)` in `ubnetwork/app/lib/findings.ts`
+  /// for `POST /api/findings` and `PATCH /api/findings/[id]`.
+  Map<String, dynamic> toServerPayload() => {
+        'status': status,
+        'shift': shift,
+        'foundAt': foundAt,
+        'location': location.trim().isEmpty ? 'UB ASSY' : location.trim(),
+        'process': process,
+        'photo': photo.trim(),
+        'photoAfter': photoAfter.trim(),
+        'theme': theme,
+        'result': result,
+        'caption': caption,
+        'hazard': hazard.clamp(0, 3),
+        'sources': sources.where((x) => x >= 0 && x < 12).toSet().toList(),
+        'before': before.toJson(),
+        'standard': standard,
+        'pic': pic,
+        'date': date,
+        'cm': cm,
+        'after': after.toJson(),
+      };
+
   factory SafetyFinding.fromJson(Map<String, dynamic> json) {
     final rawSources = json['sources'];
     final parsedSources = rawSources is List
@@ -424,13 +552,15 @@ class SafetyFinding {
         : <int>[];
     final rawHazard = json['hazard'];
     final parsedHazard = rawHazard is num ? rawHazard.toInt() : (int.tryParse(rawHazard?.toString() ?? '0') ?? 0);
+    final rawShift = (json['shift'] ?? json['team'] ?? 'white').toString().toLowerCase();
 
     return SafetyFinding(
       id: (json['_id'] ?? json['id'] ?? DateTime.now().microsecondsSinceEpoch.toString()).toString(),
       no: (json['no'] ?? '').toString(),
       status: (json['status'] ?? 'open').toString(),
-      shift: (json['shift'] ?? 'white').toString().toLowerCase() == 'red' ? 'red' : 'white',
+      shift: rawShift == 'red' ? 'red' : 'white',
       foundAt: (json['foundAt'] ?? '').toString(),
+      closedAt: (json['closedAt'] ?? '').toString(),
       location: (json['location'] ?? 'UB ASSY').toString(),
       process: (json['process'] ?? '').toString(),
       photo: (json['photo'] ?? '').toString(),

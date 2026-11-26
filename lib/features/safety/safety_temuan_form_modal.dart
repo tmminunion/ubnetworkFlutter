@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/theme.dart';
 import '../../models/safety_finding_models.dart';
+import 'safety_kaizen_paper_screen.dart';
 
 Future<SafetyFinding?> showSafetyTemuanModal(
   BuildContext context, {
@@ -38,13 +40,15 @@ class _SafetyTemuanFormSheet extends StatefulWidget {
 
 class _SafetyTemuanFormSheetState extends State<_SafetyTemuanFormSheet> {
   late SafetyFinding _f;
-  int _step = 0; // 0 = BEFORE, 1 = AFTER, 2 = REVIEW
+  late int _step; // 0 = BEFORE, 1 = AFTER, 2 = REVIEW
 
   late final TextEditingController _noCtrl;
   late final TextEditingController _foundAtCtrl;
   late final TextEditingController _locCtrl;
   late final TextEditingController _procCtrl;
   late final TextEditingController _captionCtrl;
+  late final TextEditingController _photoCtrl;
+  late final TextEditingController _photoAfterCtrl;
   late final TextEditingController _themeCtrl;
   late final TextEditingController _stdCtrl;
   late final TextEditingController _cmCtrl;
@@ -58,6 +62,9 @@ class _SafetyTemuanFormSheetState extends State<_SafetyTemuanFormSheet> {
   void initState() {
     super.initState();
     _f = widget.initial;
+    // Saat klik "+ Buat Kaizen / Edit Kaizen", langsung buka ke tab AFTER bila problem BEFORE sudah terisi
+    _step = (widget.kaizenMode && _f.caption.trim().isNotEmpty) ? 1 : 0;
+
     if (widget.kaizenMode && _f.theme.trim().isEmpty && _f.caption.trim().isNotEmpty) {
       _f.theme = 'MENANGGULANGI ${_f.caption}'.toUpperCase();
     }
@@ -65,6 +72,12 @@ class _SafetyTemuanFormSheetState extends State<_SafetyTemuanFormSheet> {
       _f.after.code = _f.before.code;
       _f.after.typeName = _f.before.typeName;
       if (_f.after.accident.isEmpty) _f.after.accident = _f.before.accident;
+      if (_f.after.injury.point == null && _f.before.injury.point != null) {
+        _f.after.injury = _f.before.injury.copyWith();
+      }
+      if (_f.after.frequency.point == null && _f.before.frequency.point != null) {
+        _f.after.frequency = _f.before.frequency.copyWith();
+      }
     }
 
     _noCtrl = TextEditingController(text: _f.no);
@@ -72,6 +85,8 @@ class _SafetyTemuanFormSheetState extends State<_SafetyTemuanFormSheet> {
     _locCtrl = TextEditingController(text: _f.location);
     _procCtrl = TextEditingController(text: _f.process);
     _captionCtrl = TextEditingController(text: _f.caption);
+    _photoCtrl = TextEditingController(text: _f.photo);
+    _photoAfterCtrl = TextEditingController(text: _f.photoAfter);
     _themeCtrl = TextEditingController(text: _f.theme);
     _stdCtrl = TextEditingController(text: _f.standard);
     _cmCtrl = TextEditingController(text: _f.cm);
@@ -89,6 +104,8 @@ class _SafetyTemuanFormSheetState extends State<_SafetyTemuanFormSheet> {
     _locCtrl.dispose();
     _procCtrl.dispose();
     _captionCtrl.dispose();
+    _photoCtrl.dispose();
+    _photoAfterCtrl.dispose();
     _themeCtrl.dispose();
     _stdCtrl.dispose();
     _cmCtrl.dispose();
@@ -107,6 +124,8 @@ class _SafetyTemuanFormSheetState extends State<_SafetyTemuanFormSheet> {
       ..location = _locCtrl.text.trim().isEmpty ? 'UB ASSY' : _locCtrl.text.trim()
       ..process = _procCtrl.text.trim()
       ..caption = _captionCtrl.text.trim()
+      ..photo = _photoCtrl.text.trim()
+      ..photoAfter = _photoAfterCtrl.text.trim()
       ..theme = _themeCtrl.text.trim()
       ..standard = _stdCtrl.text.trim()
       ..cm = _cmCtrl.text.trim()
@@ -117,11 +136,21 @@ class _SafetyTemuanFormSheetState extends State<_SafetyTemuanFormSheet> {
     _f.after.accident = _afterAccCtrl.text.trim();
   }
 
+  Future<void> _pasteUrlInto(TextEditingController ctrl) async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final txt = data?.text?.trim() ?? '';
+    if (txt.isEmpty) return;
+    setState(() {
+      ctrl.text = txt;
+      _syncFieldsToModel();
+    });
+  }
+
   void _submit() {
     _syncFieldsToModel();
     if (_f.caption.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Uraian problem (caption) wajib diisi.')),
+        const SnackBar(content: Text('Uraian problem (BEFORE) wajib diisi.')),
       );
       setState(() => _step = 0);
       return;
@@ -133,7 +162,7 @@ class _SafetyTemuanFormSheetState extends State<_SafetyTemuanFormSheet> {
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     return SizedBox(
-      height: MediaQuery.of(context).size.height * 0.92,
+      height: MediaQuery.of(context).size.height * 0.93,
       child: Column(
         children: [
           // Header
@@ -156,7 +185,9 @@ class _SafetyTemuanFormSheetState extends State<_SafetyTemuanFormSheet> {
                     ),
                   ),
                   child: Text(
-                    widget.kaizenMode ? 'KAIZEN #${_f.no}' : (_f.no.isEmpty ? 'NEW' : 'REF #${_f.no}'),
+                    widget.kaizenMode
+                        ? 'KAIZEN #${_f.no.isEmpty ? "BARU" : _f.no}'
+                        : (_f.no.isEmpty ? 'NEW' : 'REF #${_f.no}'),
                     style: TextStyle(
                       fontFamily: 'monospace',
                       fontSize: 11,
@@ -167,11 +198,20 @@ class _SafetyTemuanFormSheetState extends State<_SafetyTemuanFormSheet> {
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text(
-                    widget.kaizenMode ? 'Safety Kaizen Report' : 'Temuan Safety (List Up Problem)',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Colors.white),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.kaizenMode ? 'Safety Kaizen Report (Before ➔ After)' : 'Temuan Safety (List Up Problem)',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w900, color: Colors.white),
+                      ),
+                      const Text(
+                        'Sinkron langsung ke MongoDB Atlas (/api/findings)',
+                        style: TextStyle(fontSize: 10, color: UbColors.textMuted),
+                      ),
+                    ],
                   ),
                 ),
                 IconButton(
@@ -242,7 +282,10 @@ class _SafetyTemuanFormSheetState extends State<_SafetyTemuanFormSheet> {
                       setState(() => _step += 1);
                     },
                     icon: const Icon(Icons.arrow_forward_rounded, size: 16),
-                    label: Text(_step == 0 ? 'Lanjut AFTER' : 'Review', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+                    label: Text(
+                      _step == 0 ? 'Lanjut AFTER' : 'Review',
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+                    ),
                   ),
                 const SizedBox(width: 8),
                 FilledButton.icon(
@@ -321,6 +364,120 @@ class _SafetyTemuanFormSheetState extends State<_SafetyTemuanFormSheet> {
     );
   }
 
+  Widget _buildPhotoFieldCard({
+    required String badgeLabel,
+    required String fieldLabel,
+    required TextEditingController controller,
+    required bool isAfter,
+  }) {
+    final accent = isAfter ? UbColors.emerald : UbColors.rose;
+    final resolved = SafetyRiskMaster.resolveMediaUrl(controller.text);
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: UbColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: accent.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                decoration: BoxDecoration(
+                  color: accent,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  badgeLabel,
+                  style: TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    color: isAfter ? UbColors.bg : Colors.white,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  fieldLabel,
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.white),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () => _pasteUrlInto(controller),
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                ),
+                icon: const Icon(Icons.content_paste_rounded, size: 14),
+                label: const Text('Tempel URL', style: TextStyle(fontSize: 11)),
+              ),
+              if (controller.text.trim().isNotEmpty)
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => setState(() {
+                    controller.clear();
+                    _syncFieldsToModel();
+                  }),
+                  icon: const Icon(Icons.delete_outline_rounded, size: 17, color: UbColors.rose),
+                  tooltip: 'Hapus Foto',
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: controller,
+            onChanged: (_) => setState(_syncFieldsToModel),
+            style: const TextStyle(fontSize: 12),
+            decoration: const InputDecoration(
+              hintText: 'https://nudb.bungtemin.net/gambar/... atau ID ub_xxx.jpg',
+              hintStyle: TextStyle(fontSize: 11, color: UbColors.textMuted),
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+          ),
+          if (resolved.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            InkWell(
+              onTap: () => showSafetyPhotoLightbox(
+                context,
+                url: resolved,
+                label: '$badgeLabel · Preview',
+                isAfter: isAfter,
+              ),
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                height: 150,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: UbColors.bg,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.white12),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Image.network(
+                  resolved,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => const Center(
+                    child: Text(
+                      'URL foto belum dapat dimuat (pastikan link publik valid)',
+                      style: TextStyle(fontSize: 11, color: UbColors.textMuted),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildBeforeTab() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -328,9 +485,7 @@ class _SafetyTemuanFormSheetState extends State<_SafetyTemuanFormSheet> {
         // Shift & Status quick selector
         Row(
           children: [
-            Expanded(
-              child: _shiftSelector(),
-            ),
+            Expanded(child: _shiftSelector()),
             const SizedBox(width: 10),
             Expanded(
               child: DropdownButtonFormField<String>(
@@ -342,7 +497,7 @@ class _SafetyTemuanFormSheetState extends State<_SafetyTemuanFormSheet> {
                 ),
                 items: const [
                   DropdownMenuItem(value: 'open', child: Text('OPEN (Belum)')),
-                  DropdownMenuItem(value: 'progress', child: Text('PROGRESS (Proses)')),
+                  DropdownMenuItem(value: 'progress', child: Text('PROGRESS (On Progres)')),
                   DropdownMenuItem(value: 'closed', child: Text('CLOSED (Selesai)')),
                 ],
                 onChanged: (v) {
@@ -353,19 +508,6 @@ class _SafetyTemuanFormSheetState extends State<_SafetyTemuanFormSheet> {
           ],
         ),
         const SizedBox(height: 12),
-
-        if (widget.kaizenMode) ...[
-          TextField(
-            controller: _themeCtrl,
-            decoration: const InputDecoration(
-              labelText: 'THEMA KAIZEN REPORT',
-              hintText: 'MENANGGULANGI ...',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-          ),
-          const SizedBox(height: 10),
-        ],
 
         Row(
           children: [
@@ -384,6 +526,7 @@ class _SafetyTemuanFormSheetState extends State<_SafetyTemuanFormSheet> {
               width: 90,
               child: TextField(
                 controller: _noCtrl,
+                readOnly: _f.isServerId,
                 decoration: const InputDecoration(
                   labelText: '#No',
                   hintText: 'Auto',
@@ -414,7 +557,7 @@ class _SafetyTemuanFormSheetState extends State<_SafetyTemuanFormSheet> {
                 controller: _procCtrl,
                 decoration: const InputDecoration(
                   labelText: 'Proses / Station',
-                  hintText: 'mis. SOB 560',
+                  hintText: 'mis. REAR FLOOR 560',
                   border: OutlineInputBorder(),
                   isDense: true,
                 ),
@@ -422,13 +565,22 @@ class _SafetyTemuanFormSheetState extends State<_SafetyTemuanFormSheet> {
             ),
           ],
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 12),
+
+        // Foto BEFORE
+        _buildPhotoFieldCard(
+          badgeLabel: 'BEFORE',
+          fieldLabel: 'Foto Temuan Awal (Kondisi Sebelum)',
+          controller: _photoCtrl,
+          isAfter: false,
+        ),
+        const SizedBox(height: 12),
 
         TextField(
           controller: _captionCtrl,
           maxLines: 3,
           decoration: const InputDecoration(
-            labelText: 'Uraian Problem Finding (Wajib diisi)',
+            labelText: 'Uraian Problem Finding / BEFORE (Wajib diisi)',
             hintText: 'Jelaskan kondisi / tindakan tidak aman di shopfloor...',
             border: OutlineInputBorder(),
           ),
@@ -436,7 +588,10 @@ class _SafetyTemuanFormSheetState extends State<_SafetyTemuanFormSheet> {
         const SizedBox(height: 14),
 
         // Hazard Condition (4 Kategori)
-        const Text('Kategori Hazard Condition (4 Kategori)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: UbColors.amber)),
+        const Text(
+          'Kategori Hazard Condition (4 Kategori)',
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: UbColors.amber),
+        ),
         const SizedBox(height: 6),
         Wrap(
           spacing: 6,
@@ -454,7 +609,10 @@ class _SafetyTemuanFormSheetState extends State<_SafetyTemuanFormSheet> {
         const SizedBox(height: 14),
 
         // 12 Sumber K3
-        const Text('Sumber Temuan (Source K3)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: UbColors.cyan)),
+        const Text(
+          'Sumber Temuan (Source K3)',
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: UbColors.cyan),
+        ),
         const SizedBox(height: 6),
         Wrap(
           spacing: 6,
@@ -494,6 +652,62 @@ class _SafetyTemuanFormSheetState extends State<_SafetyTemuanFormSheet> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Quick Status Banner for Kaizen Display
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          decoration: BoxDecoration(
+            color: (_f.status == 'closed' ? UbColors.emerald : UbColors.amber).withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: (_f.status == 'closed' ? UbColors.emerald : UbColors.amber).withValues(alpha: 0.4),
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                _f.status == 'closed' ? Icons.verified_rounded : Icons.pending_actions_rounded,
+                size: 18,
+                color: _f.status == 'closed' ? UbColors.emerald : UbColors.amber,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _f.status == 'closed'
+                      ? 'Status SELESAI — Kaizen tampil di Display Safety Kaizen'
+                      : 'Tandai SELESAI jika Kaizen sudah tuntas agar tampil di Display',
+                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Colors.white),
+                ),
+              ),
+              Switch(
+                value: _f.status == 'closed',
+                activeThumbColor: UbColors.emerald,
+                onChanged: (done) => setState(() => _f.status = done ? 'closed' : 'progress'),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        TextField(
+          controller: _themeCtrl,
+          decoration: const InputDecoration(
+            labelText: 'THEMA KAIZEN REPORT',
+            hintText: 'MENANGGULANGI ...',
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // Foto AFTER
+        _buildPhotoFieldCard(
+          badgeLabel: 'AFTER',
+          fieldLabel: 'Foto Sesudah Perbaikan (Kondisi Sesudah / Kaizen)',
+          controller: _photoAfterCtrl,
+          isAfter: true,
+        ),
+        const SizedBox(height: 12),
+
         TextField(
           controller: _stdCtrl,
           maxLines: 2,
@@ -507,7 +721,7 @@ class _SafetyTemuanFormSheetState extends State<_SafetyTemuanFormSheet> {
           controller: _cmCtrl,
           maxLines: 3,
           decoration: const InputDecoration(
-            labelText: 'Countermeasure (Tindakan Penanggulangan Nyata)',
+            labelText: 'Countermeasure (Tindakan Penanggulangan Nyata / AFTER)',
             border: OutlineInputBorder(),
           ),
         ),
@@ -518,7 +732,7 @@ class _SafetyTemuanFormSheetState extends State<_SafetyTemuanFormSheet> {
               child: TextField(
                 controller: _picCtrl,
                 decoration: const InputDecoration(
-                  labelText: 'PIC (GL / TL)',
+                  labelText: 'PIC / Nama (GL / TL / Member)',
                   border: OutlineInputBorder(),
                   isDense: true,
                 ),
@@ -530,7 +744,7 @@ class _SafetyTemuanFormSheetState extends State<_SafetyTemuanFormSheet> {
                 controller: _dateCtrl,
                 decoration: const InputDecoration(
                   labelText: 'Tgl Target / Realisasi',
-                  hintText: 'dd/mm/yy',
+                  hintText: 'YYYY-MM-DD / dd/mm/yy',
                   border: OutlineInputBorder(),
                   isDense: true,
                 ),
@@ -544,7 +758,7 @@ class _SafetyTemuanFormSheetState extends State<_SafetyTemuanFormSheet> {
           maxLines: 2,
           decoration: const InputDecoration(
             labelText: 'RESULT (Dampak / Hasil Kaizen A4)',
-            hintText: 'Contoh: Potensi bahaya terhindar, area kerja lebih aman.',
+            hintText: 'Contoh: Potensi bahaya terhindar, risiko turun dari Ab ke Cc.',
             border: OutlineInputBorder(),
           ),
         ),
@@ -579,12 +793,12 @@ class _SafetyTemuanFormSheetState extends State<_SafetyTemuanFormSheet> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Temuan #${_f.no.isEmpty ? "AUTO" : _f.no} · Shift ${_f.shift.toUpperCase()} · ${_f.status.toUpperCase()}',
+                'Temuan #${_f.no.isEmpty ? "AUTO" : _f.no} · Shift ${_f.shift.toUpperCase()} · ${(SafetyRiskMaster.statusLabels[_f.status] ?? _f.status).toUpperCase()}',
                 style: const TextStyle(fontFamily: 'monospace', fontSize: 11, fontWeight: FontWeight.w800, color: UbColors.cyan),
               ),
               const SizedBox(height: 4),
               Text(
-                _f.caption.isEmpty ? '(Uraian problem belum diisi)' : _f.caption,
+                _f.theme.trim().isNotEmpty ? _f.theme : (_f.caption.isEmpty ? '(Uraian problem belum diisi)' : _f.caption),
                 style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Colors.white),
               ),
               const SizedBox(height: 6),
@@ -596,6 +810,34 @@ class _SafetyTemuanFormSheetState extends State<_SafetyTemuanFormSheet> {
           ),
         ),
         const SizedBox(height: 12),
+
+        // Side-by-Side BEFORE vs AFTER Photo & Summary Preview
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: _reviewBeforeAfterPreview(
+                label: 'BEFORE',
+                photoUrl: _f.resolvedPhoto,
+                text: _f.caption,
+                rank: _f.before,
+                isAfter: false,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _reviewBeforeAfterPreview(
+                label: 'AFTER',
+                photoUrl: _f.resolvedPhotoAfter,
+                text: _f.cm.isNotEmpty ? _f.cm : _f.standard,
+                rank: _f.after,
+                isAfter: true,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+
         if (delta != null)
           Container(
             width: double.infinity,
@@ -633,11 +875,69 @@ class _SafetyTemuanFormSheetState extends State<_SafetyTemuanFormSheet> {
         _reviewBox('Standar K3 (Recommendation)', _f.standard),
         const SizedBox(height: 8),
         _reviewBox('Tindakan Penanggulangan (Countermeasure)', _f.cm),
-        if (_f.result.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          _reviewBox('Result Kaizen', _f.result),
-        ],
+        const SizedBox(height: 8),
+        _reviewBox('Result Kaizen', _f.result),
       ],
+    );
+  }
+
+  Widget _reviewBeforeAfterPreview({
+    required String label,
+    required String photoUrl,
+    required String text,
+    required SafetyRisk rank,
+    required bool isAfter,
+  }) {
+    final accent = isAfter ? UbColors.emerald : UbColors.rose;
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: UbColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: accent.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(label, style: TextStyle(fontFamily: 'monospace', fontSize: 10.5, fontWeight: FontWeight.w900, color: accent)),
+              Text(
+                '${rank.effectiveRank.isEmpty ? "-" : rank.effectiveRank} (${rank.totalPoints ?? "-"}pt)',
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 10.5, fontWeight: FontWeight.w800, color: Colors.white),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Container(
+            height: 92,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: UbColors.bg,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.white10),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: photoUrl.isNotEmpty
+                ? Image.network(
+                    photoUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const Icon(Icons.broken_image_outlined, color: UbColors.textMuted),
+                  )
+                : Center(
+                    child: Text('Tanpa Foto $label', style: const TextStyle(fontSize: 10, color: UbColors.textMuted)),
+                  ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            text.isEmpty ? '–' : text,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 11, color: Colors.white70, height: 1.25),
+          ),
+        ],
+      ),
     );
   }
 

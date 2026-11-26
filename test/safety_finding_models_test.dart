@@ -44,14 +44,76 @@ void main() {
     expect(SafetyRiskMaster.isRankDown('Cc', 'Bb'), isFalse);
   });
 
-  test('SafetyFinding JSON round-trip and riskDelta calculation', () {
-    final seed = defaultSafetyFindings().first;
-    final restored = SafetyFinding.fromJson(seed.toJson());
-    expect(restored.no, seed.no);
-    expect(restored.before.totalPoints, 11);
-    expect(restored.after.totalPoints, 8);
-    expect(restored.riskDelta?.diff, 3);
-    expect(restored.hasKaizenReport, isTrue);
+  test('SafetyFinding JSON round-trip, Atlas closedAt, and riskDelta calculation', () {
+    final atlasPayload = <String, dynamic>{
+      '_id': 's41',
+      'no': '41',
+      'status': 'closed',
+      'shift': 'red',
+      'foundAt': '2026-11-26',
+      'closedAt': '2026-11-26',
+      'location': 'UB ASSY',
+      'process': 'REAR FLOOR 560',
+      'photo': 'ub_mwwy8uov571b09.jpg',
+      'photoAfter': 'https://nudb.bungtemin.net/gambar/ub_mwwy9xj16aa571.jpg',
+      'theme': 'Bolt anchor kendor',
+      'result': 'sudah di rapihkan',
+      'caption': 'Bolt anchor lifter kendor',
+      'hazard': 0,
+      'sources': [4],
+      'before': {
+        'accident': 'Tertimpa',
+        'code': 'B',
+        'typeName': 'Big Heavy (Tertimpa)',
+        'injury': {'desc': 'Level b', 'point': 6},
+        'frequency': {'desc': 'Tinggi', 'point': 5},
+        'countermeasure': {'desc': 'Rendah', 'point': 8},
+        'rank': 'Ab',
+      },
+      'standard': 'Kencangkan bolt sesuai torsi standar',
+      'pic': 'MH Anwar',
+      'date': '2026-11-26',
+      'cm': 'Dikencangkan & diberi marking torsi',
+      'after': {
+        'accident': 'Tertimpa',
+        'code': 'B',
+        'typeName': 'Big Heavy (Tertimpa)',
+        'injury': {'desc': 'Level c', 'point': 2},
+        'frequency': {'desc': 'Rendah', 'point': 3},
+        'countermeasure': {'desc': 'Tinggi', 'point': 1},
+        'rank': 'Cc',
+      },
+    };
+
+    final f = SafetyFinding.fromJson(atlasPayload);
+    expect(f.isServerId, isTrue);
+    expect(f.closedAt, '2026-11-26');
+    expect(f.resolvedPhoto, 'https://nudb.bungtemin.net/gambar/ub_mwwy8uov571b09.jpg');
+    expect(f.resolvedPhotoAfter, 'https://nudb.bungtemin.net/gambar/ub_mwwy9xj16aa571.jpg');
+    expect(f.before.totalPoints, 19);
+    expect(f.after.totalPoints, 6);
+    expect(f.riskDelta?.diff, 13);
+    expect(f.hasKaizenReport, isTrue);
+
+    final serverBody = f.toServerPayload();
+    expect(serverBody.containsKey('_id'), isFalse);
+    expect(serverBody['photo'], 'ub_mwwy8uov571b09.jpg');
+    expect(serverBody['photoAfter'], 'https://nudb.bungtemin.net/gambar/ub_mwwy9xj16aa571.jpg');
+  });
+
+  test('resolveMediaUrl, kaizenTag, formatBulanId, and fyLabelOf match Next.js 1:1', () {
+    expect(
+      SafetyRiskMaster.resolveMediaUrl('http://nudb.bungtemin.net/gambar/ub_abc.png'),
+      'https://nudb.bungtemin.net/gambar/ub_abc.png',
+    );
+    expect(
+      SafetyRiskMaster.resolveMediaUrl('/api/media?url=ub_abc.png'),
+      'https://ubnetwork.vercel.app/api/media?url=ub_abc.png',
+    );
+    expect(SafetyRiskMaster.kaizenTag('41', 'S'), '#S-41');
+    expect(SafetyRiskMaster.formatBulanId('2026-11-26'), 'November 2026');
+    expect(SafetyRiskMaster.fyLabelOf('2026-11-26'), 'FY26');
+    expect(SafetyRiskMaster.fyLabelOf('2027-02-10'), 'FY26');
   });
 
   test('Safety sub-hub marks /safety/temuan as native ready', () {
