@@ -224,19 +224,15 @@ class RosterAttendanceMath {
     final byName = <String, Map<String, String>>{
       for (final d in defaults) d.name: <String, String>{},
     };
-    final posByName = <String, String>{
-      for (final d in defaults) d.name: d.pos,
-    };
-    final roleByName = <String, String>{
-      for (final d in defaults) d.name: d.role,
+    final noregByName = <String, String>{
+      for (final d in defaults) d.name: d.noreg,
     };
 
     for (final rep in reports) {
       if (!rep.tanggal.startsWith(ym) || rep.shift.toUpperCase() != shift.toUpperCase()) continue;
       for (final m in rep.members) {
         byName.putIfAbsent(m.name, () => <String, String>{});
-        posByName[m.name] = m.pos;
-        roleByName[m.name] = m.role;
+        if (m.noreg.isNotEmpty) noregByName[m.name] = m.noreg;
         byName[m.name]![rep.tanggal] = m.status;
       }
     }
@@ -289,9 +285,10 @@ class RosterAttendanceMath {
         MemberAttendanceRow(
           id: idx++,
           name: name,
-          role: roleByName[name] ?? 'TM',
+          noreg: noregByName[name] ?? '',
+          role: 'TM',
           shift: shift.toUpperCase(),
-          defaultPos: posByName[name] ?? 'Pos 1',
+          defaultPos: 'Pos 1',
           hadirCount: h,
           sakitCount: s,
           izinCount: i,

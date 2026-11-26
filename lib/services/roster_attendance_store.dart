@@ -47,9 +47,10 @@ class RosterAttendanceStore {
           (e) => RosterMember(
             id: e.key + 1,
             name: e.value.name,
-            role: e.value.role,
+            noreg: e.value.noreg,
+            role: 'TM',
             shift: shift,
-            defaultPos: e.value.pos,
+            defaultPos: 'Pos 1',
           ),
         )
         .toList();
