@@ -63,9 +63,14 @@ jobs:
         id: meta
         run: |
           VER_RAW=$(grep '^version:' pubspec.yaml | awk '{print $2}')
-          VER_NAME=${VER_RAW%%+*}
+          BASE_NAME=${VER_RAW%%+*}
           BASE_CODE=${VER_RAW##*+}
+          IFS='.' read -r VER_MAJOR VER_MINOR VER_PATCH <<< "$BASE_NAME"
+          VER_PATCH=${VER_PATCH:-0}
+          NEXT_PATCH=$((VER_PATCH + GITHUB_RUN_NUMBER))
+          VER_NAME="${VER_MAJOR}.${VER_MINOR}.${NEXT_PATCH}"
           VER_CODE=$((BASE_CODE + GITHUB_RUN_NUMBER))
+          echo "Resolved build version: v${VER_NAME} (code ${VER_CODE})"
           echo "version_name=${VER_NAME}" >> "$GITHUB_OUTPUT"
           echo "version_code=${VER_CODE}" >> "$GITHUB_OUTPUT"
 
