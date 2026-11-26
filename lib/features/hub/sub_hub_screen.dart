@@ -5,6 +5,7 @@ import '../../data/hub_catalog.dart';
 import '../checksheet/checksheet_screen.dart';
 import '../safety/kyt_monitoring_screen.dart';
 import '../safety/safety_temuan_screen.dart';
+import '../safety/sga_group_screen.dart';
 import 'display_board_screen.dart';
 
 class SubHubScreen extends StatelessWidget {
@@ -28,6 +29,13 @@ class SubHubScreen extends StatelessWidget {
     if (mod.route == '/kyt/monitoring') {
       Navigator.of(context).push(
         MaterialPageRoute<void>(builder: (_) => const KytMonitoringScreen()),
+      );
+      return;
+    }
+
+    if (mod.route == '/safety/group') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const SgaGroupScreen()),
       );
       return;
     }

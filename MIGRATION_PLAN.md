@@ -18,7 +18,7 @@ Dokumen ini menjadi acuan resmi migrasi 1:1 dari `ubnetwork` (Next.js Web) ke `u
 | `/` (Home Hub) | Top Bar macOS, Display & Monitor, 6 Pilar `SQPCEHR`, 5 Kaizen, 11 Quick App | **Selesai (1:1)** | `lib/features/hub/hub_screen.dart` |
 | `/display` (GL Board Hub) | 7 Pilar × 4 Kertas KPI (28 board) | **Shell 1:1** | `lib/features/hub/display_board_screen.dart` |
 | `/productivity` | 14 modul | **3 / 14 Native** | `checksheet` (A3), `print` (PDF A3), `settings` |
-| `/safety` | 8 modul | **2 / 8 Native** | `/safety/temuan` (1.1) & `/kyt/monitoring` (1.2) selesai |
+| `/safety` | 8 modul | **3 / 8 Native** | `temuan`, `kyt/monitoring`, `group` (SGA) selesai |
 | `/quality` | 6 modul | **Shell 1:1** | Target Fase 2 |
 | `/cost` | 6 modul | **Shell 1:1** | Target Fase 4 |
 | `/hr` | 9 modul | **Shell 1:1** | Target Fase 5 |
@@ -38,7 +38,7 @@ Dokumen ini menjadi acuan resmi migrasi 1:1 dari `ubnetwork` (Next.js Web) ke `u
 ### Fase 1 — Pilar Safety (`/safety`)
 - [x] **1.1** `/safety/temuan` — Temuan Safety (List Up Problem & Kaizen Report, Matriks Risiko Toyota Karawang Plant `Aa–Cc`, STOP 6, CRUD Offline-First + Sync)
 - [x] **1.2** `/kyt/monitoring` — KYT Monitoring 12 Bulan (1 Bulan 1 KYT per Group SGA Red & White, Live Sync MySQL + Offline Cache)
-- [ ] **1.3** `/safety/group` — Group SGA (Small Group Activity)
+- [x] **1.3** `/safety/group` — Group SGA (Small Group Activity, Roster Red & White terpisah, Live Sync MySQL + Offline Cache)
 - [ ] **1.4** `/safety/device` — Safety Device & Interlock
 - [ ] **1.5** `/safety/bira` — BIRA (Bimbingan & Arahan K3)
 - [ ] **1.6** `/safety/kpi` — Safety KPI & Zero Accident

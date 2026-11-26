@@ -501,10 +501,11 @@ class HubCatalog {
           title: 'Group SGA (Small Group Activity)',
           desc: 'Struktur kelompok kerja K3 Shift Red & White, penanggung jawab Team Leader (TL), dan roster member.',
           route: '/safety/group',
-          badge: 'SGA Underbody',
+          badge: 'NATIVE READY',
           gradient: [Color(0xFF06B6D4), Color(0xFF2563EB)],
           accentColor: Color(0xFF22D3EE),
           icon: Icons.groups_2_rounded,
+          isNativeReady: true,
         ),
         SubModuleItem(
           id: 'device',

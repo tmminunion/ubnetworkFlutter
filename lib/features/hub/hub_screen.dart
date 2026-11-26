@@ -8,6 +8,7 @@ import '../../models/checksheet_models.dart';
 import '../../services/local_store.dart';
 import '../checksheet/checksheet_screen.dart';
 import 'display_board_screen.dart';
+import '../safety/sga_group_screen.dart';
 import 'sub_hub_screen.dart';
 
 class HubScreen extends StatefulWidget {
@@ -101,7 +102,9 @@ class _HubScreenState extends State<HubScreen> {
     required Color color,
   }) {
     if (route == '/safety/group') {
-      _openSubHub('safety');
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const SgaGroupScreen()),
+      );
       return;
     }
     if (route == '/productivity/tasks' || route == '/productivity/after-prod') {
