@@ -62,8 +62,10 @@ jobs:
           open(mpath, "w", encoding="utf-8").write(m)
           PYEOF
 
-      - name: Install Dependencies
-        run: flutter pub get
+      - name: Install Dependencies & Generate App Icons
+        run: |
+          flutter pub get
+          dart run flutter_launcher_icons
 
       - name: Static Analysis
         run: flutter analyze
@@ -71,26 +73,121 @@ jobs:
       - name: Run Unit Tests
         run: flutter test
 
-      - name: Build Release APK
+      - name: Configure Release Signing
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "ANDROID_KEYSTORE_BASE64 not set; skipping release signing."
+            exit 0
+          fi
+
+          echo "$KEYSTORE_B64" | base64 -d > android/app/upload-keystore.jks
+          cat <<EOF > android/key.properties
+          storePassword=$STORE_PASS
+          keyPassword=$KEY_PASS
+          keyAlias=$KEY_ALIAS
+          storeFile=upload-keystore.jks
+          EOF
+
+          python3 - <<'PYEOF'
+          import os
+
+          kts_path = "android/app/build.gradle.kts"
+          groovy_path = "android/app/build.gradle"
+
+          if os.path.exists(kts_path):
+              txt = open(kts_path, "r", encoding="utf-8").read()
+              header = (
+                  "import java.util.Properties\n"
+                  "import java.io.FileInputStream\n\n"
+                  "val keystoreProperties = Properties()\n"
+                  "val keystorePropertiesFile = rootProject.file(\"key.properties\")\n"
+                  "if (keystorePropertiesFile.exists()) {\n"
+                  "    keystoreProperties.load(FileInputStream(keystorePropertiesFile))\n"
+                  "}\n\n"
+              )
+              if "keystorePropertiesFile" not in txt:
+                  txt = header + txt
+              signing_block = (
+                  "    signingConfigs {\n"
+                  "        create(\"release\") {\n"
+                  "            keyAlias = keystoreProperties.getProperty(\"keyAlias\")\n"
+                  "            keyPassword = keystoreProperties.getProperty(\"keyPassword\")\n"
+                  "            storeFile = keystoreProperties.getProperty(\"storeFile\")?.let { file(it) }\n"
+                  "            storePassword = keystoreProperties.getProperty(\"storePassword\")\n"
+                  "        }\n"
+                  "    }\n\n"
+                  "    buildTypes {"
+              )
+              if "create(\"release\")" not in txt:
+                  txt = txt.replace("    buildTypes {", signing_block, 1)
+              txt = txt.replace(
+                  "signingConfig = signingConfigs.getByName(\"debug\")",
+                  "signingConfig = signingConfigs.getByName(\"release\")"
+              )
+              open(kts_path, "w", encoding="utf-8").write(txt)
+              print("Configured release signing in build.gradle.kts")
+          elif os.path.exists(groovy_path):
+              txt = open(groovy_path, "r", encoding="utf-8").read()
+              header = (
+                  "def keystoreProperties = new Properties()\n"
+                  "def keystorePropertiesFile = rootProject.file('key.properties')\n"
+                  "if (keystorePropertiesFile.exists()) {\n"
+                  "    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))\n"
+                  "}\n\n"
+              )
+              if "keystorePropertiesFile" not in txt:
+                  txt = header + txt
+              signing_block = (
+                  "    signingConfigs {\n"
+                  "        release {\n"
+                  "            keyAlias keystoreProperties['keyAlias']\n"
+                  "            keyPassword keystoreProperties['keyPassword']\n"
+                  "            storeFile keystoreProperties['storeFile'] ? file(keystoreProperties['storeFile']) : null\n"
+                  "            storePassword keystoreProperties['storePassword']\n"
+                  "        }\n"
+                  "    }\n\n"
+                  "    buildTypes {"
+              )
+              if "signingConfigs {" not in txt:
+                  txt = txt.replace("    buildTypes {", signing_block, 1)
+              txt = txt.replace("signingConfig signingConfigs.debug", "signingConfig signingConfigs.release")
+              open(groovy_path, "w", encoding="utf-8").write(txt)
+              print("Configured release signing in build.gradle")
+          PYEOF
+
+      - name: Build Signed Release APK & AAB (Play Store)
         run: |
           flutter build apk --release \
             --build-name="${{ steps.meta.outputs.version_name }}" \
             --build-number="${{ steps.meta.outputs.version_code }}"
           cp build/app/outputs/flutter-apk/app-release.apk "UBnetwork-v${{ steps.meta.outputs.version_name }}-code${{ steps.meta.outputs.version_code }}-release.apk"
 
+          flutter build appbundle --release \
+            --build-name="${{ steps.meta.outputs.version_name }}" \
+            --build-number="${{ steps.meta.outputs.version_code }}"
+          cp build/app/outputs/bundle/release/app-release.aab "UBnetwork-v${{ steps.meta.outputs.version_name }}-code${{ steps.meta.outputs.version_code }}-release.aab"
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.meta.outputs.version_name }}+${{ steps.meta.outputs.version_code }}
           name: UBnetwork v${{ steps.meta.outputs.version_name }} (Build ${{ steps.meta.outputs.version_code }})
-          files: UBnetwork-v${{ steps.meta.outputs.version_name }}-code${{ steps.meta.outputs.version_code }}-release.apk
+          files: |
+            UBnetwork-v${{ steps.meta.outputs.version_name }}-code${{ steps.meta.outputs.version_code }}-release.apk
+            UBnetwork-v${{ steps.meta.outputs.version_name }}-code${{ steps.meta.outputs.version_code }}-release.aab
 
-      - name: Send APK Link to Telegram
+      - name: Send APK & AAB Link to Telegram
         if: always()
         env:
           BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           APK_FILE: "UBnetwork-v${{ steps.meta.outputs.version_name }}-code${{ steps.meta.outputs.version_code }}-release.apk"
+          AAB_FILE: "UBnetwork-v${{ steps.meta.outputs.version_name }}-code${{ steps.meta.outputs.version_code }}-release.aab"
           RELEASE_URL: "https://github.com/${{ github.repository }}/releases/tag/v${{ steps.meta.outputs.version_name }}+${{ steps.meta.outputs.version_code }}"
         run: |
           if [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ]; then
@@ -98,11 +195,12 @@ jobs:
             exit 0
           fi
 
-          if [ -f "$APK_FILE" ]; then
-            SIZE_MB=$(awk "BEGIN {printf \"%.2f\", $(wc -c < "$APK_FILE")/1048576}")
-            MSG=$(printf "🚀 UBnetwork Flutter v${{ steps.meta.outputs.version_name }} (Build ${{ steps.meta.outputs.version_code }}) berhasil dibuild!\n📦 File: %s (%s MB)\n📥 Release: %s" "${APK_FILE}" "${SIZE_MB}" "${RELEASE_URL}")
+          if [ -f "$APK_FILE" ] && [ -f "$AAB_FILE" ]; then
+            APK_MB=$(awk "BEGIN {printf \"%.2f\", $(wc -c < "$APK_FILE")/1048576}")
+            AAB_MB=$(awk "BEGIN {printf \"%.2f\", $(wc -c < "$AAB_FILE")/1048576}")
+            MSG=$(printf "🚀 UBnetwork Flutter v${{ steps.meta.outputs.version_name }} (Build ${{ steps.meta.outputs.version_code }}) berhasil dibuild!\n📱 APK: %s (%s MB)\n🏪 AAB (Play Store): %s (%s MB)\n📥 Release: %s" "${APK_FILE}" "${APK_MB}" "${AAB_FILE}" "${AAB_MB}" "${RELEASE_URL}")
           else
-            MSG="❌ Build UBnetwork Flutter v${{ steps.meta.outputs.version_name }} (Build ${{ steps.meta.outputs.version_code }}) gagal menghasilkan file APK."
+            MSG="❌ Build UBnetwork Flutter v${{ steps.meta.outputs.version_name }} (Build ${{ steps.meta.outputs.version_code }}) gagal menghasilkan file APK/AAB."
           fi
 
           curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
@@ -115,7 +213,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          rm -rf build android /tmp/ubnet_tpl *.apk
+          rm -rf build android /tmp/ubnet_tpl *.apk *.aab
           ARTIFACT_IDS=$(gh api "repos/${{ github.repository }}/actions/artifacts?per_page=100" --jq '.artifacts[].id' 2>/dev/null || true)
           for AID in $ARTIFACT_IDS; do
             gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/${AID}" >/dev/null 2>&1 || true
