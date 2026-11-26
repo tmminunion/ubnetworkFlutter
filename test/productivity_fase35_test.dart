@@ -3,15 +3,20 @@ import 'package:ubnetwork_flutter/models/productivity_ops_models.dart';
 
 void main() {
   group('AfterProdEngine', () {
-    test('excludes GL/TL, prioritizes Vokasi jobs, and places leftover TMs in Standby', () {
+    test('excludes GL/TL by role and known leader names, prioritizes Vokasi jobs, and places leftover TMs in Standby', () {
       const members = [
         AfterProdMember(id: 1, name: 'GL Budi', role: 'GL', statusKaryawan: 'Tetap'),
         AfterProdMember(id: 2, name: 'TL Andi', role: 'TL', statusKaryawan: 'Tetap'),
+        AfterProdMember(id: 14, name: 'NUNU FATULAH', role: 'TM', statusKaryawan: 'Tetap'),
+        AfterProdMember(id: 12, name: 'DWI MULYONO', role: 'TM', statusKaryawan: 'Tetap'),
         AfterProdMember(id: 3, name: 'TM Vokasi 1', role: 'TM', statusKaryawan: 'Vokasi', line: 'Pos 1'),
         AfterProdMember(id: 4, name: 'TM Tetap 1', role: 'TM', statusKaryawan: 'Tetap', line: 'Pos 2'),
         AfterProdMember(id: 5, name: 'TM Kontrak 1', role: 'TM', statusKaryawan: 'Kontrak', line: 'Pos 3'),
         AfterProdMember(id: 6, name: 'TM Absent', role: 'TM', statusKaryawan: 'Tetap', present: false),
       ];
+
+      expect(members[2].isEligibleFor5S, isFalse);
+      expect(members[3].isEligibleFor5S, isFalse);
 
       const jobs = [
         AfterProdJob(id: 10, name: 'Sapu Area', requiredPeople: 1, allowedStatuses: ['Tetap']),
@@ -25,6 +30,10 @@ void main() {
         shift: 'RED',
         seed: 42,
       );
+
+      final allAssigned = res.expand((r) => r.members).toList();
+      expect(allAssigned, isNot(contains('NUNU FATULAH')));
+      expect(allAssigned, isNot(contains('DWI MULYONO')));
 
       final vokasiJob = res.firstWhere((a) => a.jobId == 11);
       expect(vokasiJob.status, 'Terisi');
@@ -41,6 +50,84 @@ void main() {
       final standby = res.firstWhere((a) => a.jobId == -1);
       expect(standby.status, 'Sisa MP');
       expect(standby.members, ['TM Kontrak 1']);
+    });
+
+    test('parses Next.js Atlas job payload and auto-assigns 1:1 emoji', () {
+      final j1 = AfterProdJob.fromJson({
+        'id': 101,
+        'job_name': '5R Rest Area ALL + Renew Stiker Kaki',
+        'shift': 'COMMON',
+        'required_people': 1,
+        'allowed_status': '',
+        'is_active': true,
+      });
+      final j2 = AfterProdJob.fromJson({
+        'id': 102,
+        'job_name': '5R Jalur Tamu + Renew Stiker',
+        'shift': 'WHITE',
+        'required_people': 1,
+        'allowed_status': 'vokasi',
+        'is_active': 1,
+      });
+      final j3 = AfterProdJob.fromJson({
+        'id': 103,
+        'job_name': '5R Buang Sampah',
+        'shift': 'RED',
+        'required_people': 2,
+        'is_active': 1,
+      });
+
+      expect(j1.scope, 'COMMON');
+      expect(j1.emoji, '🌳');
+      expect(j1.allowedStatuses.length, 3);
+      expect(j2.scope, 'WHITE');
+      expect(j2.emoji, '🤝');
+      expect(j2.allowedStatuses, ['Vokasi']);
+      expect(j3.emoji, '🗑️');
+    });
+
+    test('moveMember and swapMembers update assignments cleanly', () {
+      const initial = [
+        AfterProdAssignment(
+          jobId: 1,
+          jobName: '5R Rest Area',
+          emoji: '🌳',
+          requiredPeople: 1,
+          members: ['WISNU'],
+          status: 'Terisi',
+        ),
+        AfterProdAssignment(
+          jobId: 2,
+          jobName: '5R Jalur Tamu',
+          emoji: '🤝',
+          requiredPeople: 1,
+          members: ['RISKI'],
+          status: 'Terisi',
+        ),
+      ];
+
+      // Swap WISNU <-> RISKI
+      final swapped = AfterProdEngine.swapMembers(
+        assignments: initial,
+        aJobIdx: 0,
+        aMemberIdx: 0,
+        bJobIdx: 1,
+        bMemberIdx: 0,
+      );
+      expect(swapped[0].members, ['RISKI']);
+      expect(swapped[1].members, ['WISNU']);
+
+      // Move RISKI from job 0 to job 1
+      final moved = AfterProdEngine.moveMember(
+        assignments: swapped,
+        fromJobIdx: 0,
+        memberName: 'RISKI',
+        toJobIdx: 1,
+      );
+      expect(moved[0].members, isEmpty);
+      expect(moved[0].status, 'Off (Kekurangan MP)');
+      expect(moved[1].members, ['WISNU', 'RISKI']);
+      expect(moved[1].status, 'Terisi');
     });
 
     test('buildWhatsappText formats assignments cleanly', () {

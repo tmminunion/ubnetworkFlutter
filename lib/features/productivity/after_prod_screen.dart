@@ -5,6 +5,18 @@ import '../../core/theme.dart';
 import '../../models/productivity_ops_models.dart';
 import '../../services/productivity_ops_store.dart';
 
+class _MemberDragData {
+  const _MemberDragData({
+    required this.jobIdx,
+    required this.memberIdx,
+    required this.name,
+  });
+
+  final int jobIdx;
+  final int memberIdx;
+  final String name;
+}
+
 class AfterProdScreen extends StatefulWidget {
   const AfterProdScreen({super.key});
 
@@ -12,9 +24,9 @@ class AfterProdScreen extends StatefulWidget {
   State<AfterProdScreen> createState() => _AfterProdScreenState();
 }
 
-class _AfterProdScreenState extends State<AfterProdScreen> with SingleTickerProviderStateMixin {
-  late final TabController _tabCtrl;
-  String _shift = 'RED';
+class _AfterProdScreenState extends State<AfterProdScreen> {
+  int _tabIndex = 0; // 0: Generate, 1: List Anggota, 2: List Pekerjaan, 3: History
+  String _shift = 'WHITE';
   String _jamPulang = '18.15';
   bool _loading = true;
   bool _fromServer = false;
@@ -24,47 +36,122 @@ class _AfterProdScreenState extends State<AfterProdScreen> with SingleTickerProv
   List<AfterProdAssignment> _assignments = const [];
   List<AfterProdHistoryRecord> _history = const [];
 
+  _MemberDragData? _selectedForMove;
+
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 4, vsync: this);
     _load();
   }
 
-  @override
-  void dispose() {
-    _tabCtrl.dispose();
-    super.dispose();
-  }
-
   Future<void> _load() async {
-    setState(() => _loading = true);
-    final memRes = await ProductivityOpsStore.instance.fetchAfterMembers(_shift);
-    final jobRes = await ProductivityOpsStore.instance.fetchAfterJobs(_shift);
-    final hist = await ProductivityOpsStore.instance.loadAfterHistory(_shift);
-    if (!mounted) return;
     setState(() {
-      _members = memRes.members;
-      _jobs = jobRes.jobs;
+      _loading = true;
+      _selectedForMove = null;
+    });
+
+    final results = await Future.wait([
+      ProductivityOpsStore.instance.fetchAfterMembers(_shift),
+      ProductivityOpsStore.instance.fetchAfterJobs(_shift),
+      ProductivityOpsStore.instance.fetchAfterTasks(_shift),
+      ProductivityOpsStore.instance.loadAfterHistory(_shift),
+    ]);
+
+    if (!mounted) return;
+
+    final memRes = results[0] as ({List<AfterProdMember> members, bool fromServer});
+    final jobRes = results[1] as ({List<AfterProdJob> jobs, bool fromServer});
+    final taskRes = results[2]
+        as ({List<AfterProdAssignment> tasks, String? jamPulang, String? date, bool fromServer});
+    final hist = results[3] as List<AfterProdHistoryRecord>;
+
+    final eligibleMembers = memRes.members.where((m) => m.isEligibleFor5S).toList();
+    final sortedJobs = List<AfterProdJob>.from(jobRes.jobs)
+      ..sort((a, b) {
+        if (a.isActive != b.isActive) return a.isActive ? -1 : 1;
+        return a.id.compareTo(b.id);
+      });
+
+    List<AfterProdAssignment> initialTasks = const [];
+    var loadedJam = _jamPulang;
+
+    if (taskRes.tasks.isNotEmpty) {
+      initialTasks = taskRes.tasks;
+      if (taskRes.jamPulang != null && taskRes.jamPulang!.isNotEmpty) {
+        loadedJam = taskRes.jamPulang!;
+      }
+    } else if (hist.isNotEmpty && hist.first.date == ubTodayYmd()) {
+      initialTasks = hist.first.assignments;
+      loadedJam = hist.first.jamPulang;
+    } else if (eligibleMembers.any((m) => m.present) && sortedJobs.any((j) => j.isActive)) {
+      initialTasks = AfterProdEngine.generateAssignments(
+        members: eligibleMembers,
+        jobs: sortedJobs,
+        shift: _shift,
+      );
+    }
+
+    setState(() {
+      _members = eligibleMembers;
+      _jobs = sortedJobs;
       _history = hist;
-      _fromServer = memRes.fromServer || jobRes.fromServer;
-      _assignments = hist.isNotEmpty && hist.first.date == ubTodayYmd()
-          ? hist.first.assignments
-          : const [];
+      _assignments = initialTasks;
+      _jamPulang = loadedJam;
+      _fromServer = memRes.fromServer || jobRes.fromServer || taskRes.fromServer;
       _loading = false;
     });
   }
 
+  void _showToast(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(msg, style: const TextStyle(fontWeight: FontWeight.w700)),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+  }
+
+  Future<void> _persistSilently(List<AfterProdAssignment> next) async {
+    final rec = AfterProdHistoryRecord(
+      date: ubTodayYmd(),
+      shift: _shift,
+      jamPulang: _jamPulang,
+      presentCount: _presentCount,
+      requiredCount: _requiredCount,
+      assignments: next,
+    );
+    await ProductivityOpsStore.instance.saveAfterHistory(rec);
+    final hist = await ProductivityOpsStore.instance.loadAfterHistory(_shift);
+    if (mounted) {
+      setState(() => _history = hist);
+    }
+  }
+
   void _generate() {
+    if (_activeJobCount == 0) {
+      _showToast('Belum ada pekerjaan aktif. Tambahkan di List Pekerjaan.');
+      setState(() => _tabIndex = 2);
+      return;
+    }
+    if (_presentCount == 0) {
+      _showToast('Pilih minimal 1 anggota yang hadir.');
+      return;
+    }
     final res = AfterProdEngine.generateAssignments(
       members: _members,
       jobs: _jobs,
       shift: _shift,
     );
-    setState(() => _assignments = res);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Penugasan 5S After Produksi berhasil di-generate!')),
-    );
+    setState(() {
+      _assignments = res;
+      _selectedForMove = null;
+    });
+    _persistSilently(res);
+    _showToast('✨ Penugasan After Produksi berhasil di-generate ulang!');
   }
 
   Future<void> _saveCurrentAssignments() async {
@@ -81,7 +168,7 @@ class _AfterProdScreenState extends State<AfterProdScreen> with SingleTickerProv
     final hist = await ProductivityOpsStore.instance.loadAfterHistory(_shift);
     if (!mounted) return;
     setState(() => _history = hist);
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(res.message)));
+    _showToast(res.message);
   }
 
   void _copyWhatsapp() {
@@ -93,65 +180,60 @@ class _AfterProdScreenState extends State<AfterProdScreen> with SingleTickerProv
       assignments: _assignments,
     );
     Clipboard.setData(ClipboardData(text: text));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Format WA distribusi 5S disalin ke clipboard!')),
-    );
+    _showToast('Format WA distribusi 5S disalin ke clipboard!');
   }
 
-  void _openMoveMemberSheet(int fromIndex, String memberName) {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: UbColors.surface,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Pindahkan $memberName ke Area Lain', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
-            const SizedBox(height: 10),
-            Flexible(
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: _assignments.length,
-                itemBuilder: (_, idx) {
-                  if (idx == fromIndex) return const SizedBox.shrink();
-                  final target = _assignments[idx];
-                  return ListTile(
-                    dense: true,
-                    leading: Text(target.emoji, style: const TextStyle(fontSize: 18)),
-                    title: Text(target.jobName, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
-                    subtitle: Text('${target.members.length} petugas', style: const TextStyle(fontSize: 11, color: UbColors.textMuted)),
-                    trailing: const Icon(Icons.swap_horiz_rounded, color: UbColors.cyan),
-                    onTap: () {
-                      final updated = List<AfterProdAssignment>.from(_assignments);
-                      final srcList = List<String>.from(updated[fromIndex].members)..remove(memberName);
-                      final dstList = List<String>.from(updated[idx].members)..add(memberName);
-                      updated[fromIndex] = updated[fromIndex].copyWith(
-                        members: srcList,
-                        status: srcList.isEmpty && updated[fromIndex].jobId != -1 ? 'Off (Kekurangan MP)' : updated[fromIndex].status,
-                      );
-                      updated[idx] = updated[idx].copyWith(
-                        members: dstList,
-                        status: updated[idx].jobId == -1 ? 'Sisa MP' : 'Terisi',
-                      );
-                      setState(() => _assignments = updated);
-                      Navigator.pop(ctx);
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
+  void _handleMoveMember(_MemberDragData dragged, int targetJobIdx) {
+    if (dragged.jobIdx == targetJobIdx) return;
+    final targetJobName = _assignments[targetJobIdx].jobName;
+    final next = AfterProdEngine.moveMember(
+      assignments: _assignments,
+      fromJobIdx: dragged.jobIdx,
+      memberName: dragged.name,
+      toJobIdx: targetJobIdx,
     );
+    setState(() {
+      _assignments = next;
+      _selectedForMove = null;
+    });
+    _persistSilently(next);
+    _showToast('✅ ${dragged.name} dipindahkan ke $targetJobName');
+  }
+
+  void _handleSwapMembers(_MemberDragData a, _MemberDragData b) {
+    if (a.jobIdx == b.jobIdx && a.memberIdx == b.memberIdx) return;
+    final next = AfterProdEngine.swapMembers(
+      assignments: _assignments,
+      aJobIdx: a.jobIdx,
+      aMemberIdx: a.memberIdx,
+      bJobIdx: b.jobIdx,
+      bMemberIdx: b.memberIdx,
+    );
+    setState(() {
+      _assignments = next;
+      _selectedForMove = null;
+    });
+    _persistSilently(next);
+    _showToast('🔄 ${a.name} ↔ ${b.name} berhasil ditukar!');
+  }
+
+  void _handleTapMember(int jobIdx, int memberIdx, String name) {
+    final tapped = _MemberDragData(jobIdx: jobIdx, memberIdx: memberIdx, name: name);
+    final sel = _selectedForMove;
+    if (sel == null) {
+      setState(() => _selectedForMove = tapped);
+      return;
+    }
+    if (sel.jobIdx == jobIdx && sel.memberIdx == memberIdx) {
+      setState(() => _selectedForMove = null);
+      return;
+    }
+    _handleSwapMembers(sel, tapped);
   }
 
   Future<void> _openJobForm([AfterProdJob? existing]) async {
     final nameCtrl = TextEditingController(text: existing?.name ?? '');
-    final emojiCtrl = TextEditingController(text: existing?.emoji ?? '🧹');
+    final emojiCtrl = TextEditingController(text: existing?.emoji ?? '🛠️');
     final lineCtrl = TextEditingController(text: existing?.preferredLine ?? '');
     var req = existing?.requiredPeople ?? 1;
     var scope = existing?.scope ?? 'COMMON';
@@ -204,7 +286,7 @@ class _AfterProdScreenState extends State<AfterProdScreen> with SingleTickerProv
                           initialValue: scope,
                           decoration: const InputDecoration(labelText: 'Scope Shift', border: OutlineInputBorder(), isDense: true),
                           items: const [
-                            DropdownMenuItem(value: 'COMMON', child: Text('COMMON (Semua)')),
+                            DropdownMenuItem(value: 'COMMON', child: Text('COMMON (R & W)')),
                             DropdownMenuItem(value: 'RED', child: Text('RED')),
                             DropdownMenuItem(value: 'WHITE', child: Text('WHITE')),
                           ],
@@ -216,7 +298,7 @@ class _AfterProdScreenState extends State<AfterProdScreen> with SingleTickerProv
                       const SizedBox(width: 8),
                       Expanded(
                         child: DropdownButtonFormField<int>(
-                          initialValue: req,
+                          initialValue: req.clamp(1, 5),
                           decoration: const InputDecoration(labelText: 'Butuh MP', border: OutlineInputBorder(), isDense: true),
                           items: [1, 2, 3, 4, 5].map((n) => DropdownMenuItem(value: n, child: Text('$n Orang'))).toList(),
                           onChanged: (v) {
@@ -258,7 +340,7 @@ class _AfterProdScreenState extends State<AfterProdScreen> with SingleTickerProv
                     onChanged: (v) => setM(() => active = v),
                   ),
                   FilledButton(
-                    style: FilledButton.styleFrom(backgroundColor: UbColors.emerald, foregroundColor: UbColors.bg),
+                    style: FilledButton.styleFrom(backgroundColor: UbColors.cyan, foregroundColor: UbColors.bg),
                     onPressed: () {
                       if (nameCtrl.text.trim().isEmpty) return;
                       Navigator.pop(ctx, true);
@@ -273,10 +355,12 @@ class _AfterProdScreenState extends State<AfterProdScreen> with SingleTickerProv
       );
 
       if (saved == true) {
+        final name = nameCtrl.text.trim();
+        final emoji = emojiCtrl.text.trim().isEmpty ? AfterProdEngine.jobEmoji(name) : emojiCtrl.text.trim();
         final job = AfterProdJob(
           id: existing?.id ?? 0,
-          name: nameCtrl.text.trim(),
-          emoji: emojiCtrl.text.trim().isEmpty ? '🧹' : emojiCtrl.text.trim(),
+          name: name,
+          emoji: emoji,
           scope: scope,
           requiredPeople: req,
           allowedStatuses: allowed.toList(),
@@ -285,9 +369,7 @@ class _AfterProdScreenState extends State<AfterProdScreen> with SingleTickerProv
         );
         final res = await ProductivityOpsStore.instance.saveAfterJob(_shift, job);
         await _load();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(res.message)));
-        }
+        _showToast(res.message);
       }
     } finally {
       nameCtrl.dispose();
@@ -297,6 +379,10 @@ class _AfterProdScreenState extends State<AfterProdScreen> with SingleTickerProv
   }
 
   int get _presentCount => _members.where((m) => m.isEligibleFor5S && m.present).length;
+
+  int get _activeJobCount => _jobs
+      .where((j) => j.isActive && (j.scope == 'COMMON' || j.scope == _shift))
+      .length;
 
   int get _requiredCount => _jobs
       .where((j) => j.isActive && (j.scope == 'COMMON' || j.scope == _shift))
@@ -311,264 +397,663 @@ class _AfterProdScreenState extends State<AfterProdScreen> with SingleTickerProv
 
   @override
   Widget build(BuildContext context) {
-    final diff = _presentCount - _requiredCount;
-    final balLabel = diff == 0 ? 'PAS' : (diff > 0 ? 'SURPLUS +$diff' : 'KURANG $diff');
-    final balColor = diff >= 0 ? UbColors.emerald : UbColors.rose;
-
     return Scaffold(
       backgroundColor: UbColors.bg,
-      appBar: AppBar(
-        backgroundColor: UbColors.surface,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      body: SafeArea(
+        child: Column(
           children: [
-            const Text('UBAI After-Prod 5S', style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w900)),
-            Text(
-              _fromServer ? 'Live Sync MySQL · Shift $_shift' : 'Offline-First Lokal · Shift $_shift',
-              style: const TextStyle(fontSize: 11, color: UbColors.textMuted),
+            _buildCompactHeader(),
+            _buildNavGrid(),
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator(color: UbColors.cyan))
+                  : _buildActiveTab(),
             ),
-          ],
-        ),
-        actions: [
-          SegmentedButton<String>(
-            segments: const [
-              ButtonSegment(value: 'RED', label: Text('RED', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800))),
-              ButtonSegment(value: 'WHITE', label: Text('WHITE', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800))),
-            ],
-            selected: {_shift},
-            onSelectionChanged: (s) {
-              setState(() => _shift = s.first);
-              _load();
-            },
-          ),
-          const SizedBox(width: 10),
-        ],
-        bottom: TabBar(
-          controller: _tabCtrl,
-          isScrollable: true,
-          indicatorColor: UbColors.emerald,
-          labelColor: UbColors.emerald,
-          unselectedLabelColor: UbColors.textMuted,
-          tabs: const [
-            Tab(text: 'Generate'),
-            Tab(text: 'List Anggota'),
-            Tab(text: 'List Pekerjaan'),
-            Tab(text: 'History'),
           ],
         ),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                // 4 TOP KPI STAT CARDS
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
-                  child: Row(
-                    children: [
-                      _MiniKpi(label: 'HADIR ($_shift)', value: '$_presentCount', color: UbColors.cyan),
-                      const SizedBox(width: 8),
-                      _MiniKpi(label: 'BUTUH', value: '$_requiredCount', color: UbColors.amber),
-                      const SizedBox(width: 8),
-                      _MiniKpi(label: 'BAL', value: balLabel, color: balColor),
-                      const SizedBox(width: 8),
-                      _MiniKpi(
-                        label: 'DISTRIBUSI',
-                        value: _assignments.isEmpty ? '-' : '${_assignments.length} Pos',
-                        color: UbColors.purple,
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: TabBarView(
-                    controller: _tabCtrl,
-                    children: [
-                      _buildGenerateTab(),
-                      _buildMembersTab(),
-                      _buildJobsTab(),
-                      _buildHistoryTab(),
-                    ],
-                  ),
-                ),
-              ],
-            ),
     );
   }
 
+  Widget _buildCompactHeader() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      decoration: const BoxDecoration(
+        color: UbColors.surface,
+        border: Border(bottom: BorderSide(color: Colors.white10)),
+      ),
+      child: Row(
+        children: [
+          InkWell(
+            onTap: () => Navigator.of(context).maybePop(),
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.white12),
+              ),
+              child: const Icon(Icons.arrow_back_rounded, size: 18, color: Colors.white),
+            ),
+          ),
+          const SizedBox(width: 10),
+          const Text(
+            'UBAI',
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w900,
+              color: UbColors.cyan,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(width: 10),
+          // Compact RED | WHITE pill switcher matching web 1:1
+          Container(
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              color: UbColors.bg,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: Colors.white12),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _ShiftPill(
+                  label: 'RED',
+                  active: _shift == 'RED',
+                  activeColor: const Color(0xFFDC2626),
+                  onTap: () {
+                    if (_shift != 'RED') {
+                      setState(() => _shift = 'RED');
+                      _load();
+                    }
+                  },
+                ),
+                const SizedBox(width: 2),
+                _ShiftPill(
+                  label: 'WHITE',
+                  active: _shift == 'WHITE',
+                  activeColor: const Color(0xFF2563EB),
+                  onTap: () {
+                    if (_shift != 'WHITE') {
+                      setState(() => _shift = 'WHITE');
+                      _load();
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+          const Spacer(),
+          Tooltip(
+            message: _fromServer ? 'Tersambung Server' : 'Mode Offline Cache',
+            child: Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _fromServer ? UbColors.emerald : UbColors.amber,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          InkWell(
+            onTap: _load,
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.white12),
+              ),
+              child: const Icon(Icons.refresh_rounded, size: 18, color: UbColors.cyan),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNavGrid() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: _NavCard(
+                  icon: Icons.shuffle_rounded,
+                  title: 'GENERATE',
+                  subtitle: 'Buat penugasan hari ini',
+                  active: _tabIndex == 0,
+                  onTap: () => setState(() => _tabIndex = 0),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _NavCard(
+                  icon: Icons.groups_rounded,
+                  title: 'LIST ANGGOTA',
+                  subtitle: '$_presentCount/${_members.length} hadir',
+                  active: _tabIndex == 1,
+                  onTap: () => setState(() => _tabIndex = 1),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _NavCard(
+                  icon: Icons.tune_rounded,
+                  title: 'LIST PEKERJAAN',
+                  subtitle: '$_activeJobCount job aktif',
+                  active: _tabIndex == 2,
+                  onTap: () => setState(() => _tabIndex = 2),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _NavCard(
+                  icon: Icons.history_rounded,
+                  title: 'HISTORY',
+                  subtitle: 'Riwayat per hari',
+                  active: _tabIndex == 3,
+                  onTap: () => setState(() => _tabIndex = 3),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActiveTab() {
+    switch (_tabIndex) {
+      case 0:
+        return _buildGenerateTab();
+      case 1:
+        return _buildMembersTab();
+      case 2:
+        return _buildJobsTab();
+      case 3:
+        return _buildHistoryTab();
+      default:
+        return _buildGenerateTab();
+    }
+  }
+
   Widget _buildGenerateTab() {
+    final sel = _selectedForMove;
     return ListView(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.fromLTRB(12, 2, 12, 24),
       children: [
+        // Compact Control Bar
         Container(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
             color: UbColors.surface,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(14),
             border: Border.all(color: Colors.white12),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(
-                children: [
-                  const Text('Target Pulang:', style: TextStyle(fontSize: 12, color: UbColors.textMuted)),
-                  const SizedBox(width: 8),
-                  for (final jp in ['16.00', '17.15', '18.15', '19.15'])
-                    Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: ChoiceChip(
-                        label: Text('$jp WIB', style: const TextStyle(fontSize: 11)),
-                        selected: _jamPulang == jp,
-                        onSelected: (_) => setState(() => _jamPulang = jp),
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              FilledButton.icon(
-                style: FilledButton.styleFrom(
-                  backgroundColor: UbColors.emerald,
-                  foregroundColor: UbColors.bg,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-                onPressed: _generate,
-                icon: const Icon(Icons.auto_awesome_rounded, size: 18),
-                label: const Text('GENERATE TUGAS AFTER PRODUKSI', style: TextStyle(fontWeight: FontWeight.w900)),
-              ),
-              if (_assignments.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                Row(
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
                   children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: _copyWhatsapp,
-                        icon: const Icon(Icons.copy_rounded, size: 16),
-                        label: const Text('Salin Format WA', style: TextStyle(fontSize: 12)),
-                      ),
+                    const Text(
+                      'Pulang:',
+                      style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: UbColors.textMuted),
                     ),
                     const SizedBox(width: 8),
-                    Expanded(
-                      child: FilledButton.tonalIcon(
-                        onPressed: _saveCurrentAssignments,
-                        icon: const Icon(Icons.save_rounded, size: 16),
-                        label: const Text('Simpan History', style: TextStyle(fontSize: 12)),
+                    for (final jp in const ['16.00', '17.15', '18.15', '19.15'])
+                      Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: ChoiceChip(
+                          visualDensity: VisualDensity.compact,
+                          selectedColor: UbColors.cyan,
+                          labelStyle: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: _jamPulang == jp ? UbColors.bg : Colors.white70,
+                          ),
+                          label: Text('$jp WIB'),
+                          selected: _jamPulang == jp,
+                          onSelected: (_) => setState(() => _jamPulang = jp),
+                        ),
                       ),
-                    ),
                   ],
                 ),
-              ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    flex: 5,
+                    child: FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: UbColors.cyan,
+                        foregroundColor: UbColors.bg,
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                      ),
+                      onPressed: _generate,
+                      icon: const Icon(Icons.shuffle_rounded, size: 16),
+                      label: const Text('GENERATE ULANG', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900)),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    flex: 3,
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        side: const BorderSide(color: Colors.white24),
+                      ),
+                      onPressed: _assignments.isEmpty ? null : _copyWhatsapp,
+                      icon: const Icon(Icons.copy_rounded, size: 15),
+                      label: const Text('WA', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800)),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    flex: 3,
+                    child: FilledButton.tonalIcon(
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                      ),
+                      onPressed: _assignments.isEmpty ? null : _saveCurrentAssignments,
+                      icon: const Icon(Icons.save_rounded, size: 15),
+                      label: const Text('Simpan', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800)),
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
+
+        // Instruction / Active Swap Banner (1:1 with web screenshot)
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          decoration: BoxDecoration(
+            color: sel != null ? UbColors.cyan.withValues(alpha: 0.14) : UbColors.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: sel != null ? UbColors.cyan.withValues(alpha: 0.7) : Colors.white12,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                sel != null ? Icons.swap_horiz_rounded : Icons.drag_indicator_rounded,
+                size: 16,
+                color: UbColors.cyan,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: sel != null
+                    ? Text(
+                        'Memindahkan ${sel.name} — tap nama lain untuk tukar, atau tap baris job untuk pindah.',
+                        style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Colors.white),
+                      )
+                    : const Text(
+                        'Tahan & geser nama ke job lain untuk pindah, atau jatuhkan di atas nama lain untuk tukar posisi. Di HP, cukup tap nama lalu tap tujuan.',
+                        style: TextStyle(fontSize: 11, color: UbColors.textMuted, height: 1.35),
+                      ),
+              ),
+              if (sel != null)
+                TextButton(
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    foregroundColor: UbColors.rose,
+                  ),
+                  onPressed: () => setState(() => _selectedForMove = null),
+                  child: const Text('Batal', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800)),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        // 3-Column Table: NO | PEKERJAAN | ANGGOTA PETUGAS (1:1 with web)
         if (_assignments.isEmpty)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 32),
             child: Center(
               child: Text(
-                'Tekan tombol GENERATE untuk membagi tugas 5S akhir shift secara otomatis.',
+                'Tekan tombol GENERATE ULANG untuk membagi tugas 5S akhir shift.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: UbColors.textMuted, fontSize: 12.5),
               ),
             ),
           )
         else
-          ..._assignments.asMap().entries.map((entry) {
-            final idx = entry.key;
-            final a = entry.value;
-            final isOff = a.status == 'Off (Kekurangan MP)';
-            final isStandby = a.status == 'Sisa MP';
-            final badgeColor = isOff ? UbColors.rose : (isStandby ? UbColors.amber : UbColors.emerald);
-
-            return Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: UbColors.surface,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: badgeColor.withValues(alpha: 0.35)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+          Container(
+            decoration: BoxDecoration(
+              color: UbColors.surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.white12),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: [
+                // Table Header
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.04),
+                    border: const Border(bottom: BorderSide(color: Colors.white12)),
+                  ),
+                  child: const Row(
                     children: [
-                      Text(a.emoji, style: const TextStyle(fontSize: 18)),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(a.jobName, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5)),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: badgeColor.withValues(alpha: 0.16),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
+                      SizedBox(
+                        width: 26,
                         child: Text(
-                          a.status,
-                          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: badgeColor),
+                          'NO',
+                          style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: UbColors.textMuted, letterSpacing: 0.6),
+                        ),
+                      ),
+                      Expanded(
+                        flex: 5,
+                        child: Text(
+                          'PEKERJAAN',
+                          style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: UbColors.textMuted, letterSpacing: 0.6),
+                        ),
+                      ),
+                      SizedBox(width: 8),
+                      Expanded(
+                        flex: 5,
+                        child: Text(
+                          'ANGGOTA PETUGAS',
+                          style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: UbColors.textMuted, letterSpacing: 0.6),
                         ),
                       ),
                     ],
                   ),
-                  if (a.members.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: a.members
-                          .map(
-                            (m) => ActionChip(
-                              avatar: const Icon(Icons.swap_horiz_rounded, size: 14, color: UbColors.cyan),
-                              label: Text(m, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
-                              onPressed: () => _openMoveMemberSheet(idx, m),
-                            ),
-                          )
-                          .toList(),
-                    ),
-                  ],
-                ],
-              ),
-            );
-          }),
+                ),
+
+                // Table Rows
+                for (var idx = 0; idx < _assignments.length; idx++)
+                  _buildAssignmentRow(idx, _assignments[idx]),
+              ],
+            ),
+          ),
       ],
     );
   }
 
-  Widget _buildMembersTab() {
-    return ListView.builder(
-      padding: const EdgeInsets.all(12),
-      itemCount: _members.length,
-      itemBuilder: (_, idx) {
-        final m = _members[idx];
-        return Card(
-          margin: const EdgeInsets.only(bottom: 6),
-          child: SwitchListTile(
-            value: m.present,
-            activeThumbColor: UbColors.emerald,
-            secondary: CircleAvatar(
-              radius: 14,
-              backgroundColor: _statusDotColor(m.statusKaryawan).withValues(alpha: 0.2),
-              child: Container(
-                width: 9,
-                height: 9,
-                decoration: BoxDecoration(shape: BoxShape.circle, color: _statusDotColor(m.statusKaryawan)),
+  Widget _buildAssignmentRow(int jobIdx, AfterProdAssignment a) {
+    final isStandby = a.jobId == -1 || a.status == 'Sisa MP';
+    final isOff = a.status == 'Off (Kekurangan MP)' && a.members.isEmpty;
+    final canTapMoveHere = _selectedForMove != null && _selectedForMove!.jobIdx != jobIdx;
+
+    return DragTarget<_MemberDragData>(
+      onWillAcceptWithDetails: (details) => details.data.jobIdx != jobIdx,
+      onAcceptWithDetails: (details) => _handleMoveMember(details.data, jobIdx),
+      builder: (context, candidateData, rejectedData) {
+        final isHovered = candidateData.isNotEmpty;
+        return InkWell(
+          onTap: canTapMoveHere ? () => _handleMoveMember(_selectedForMove!, jobIdx) : null,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+            decoration: BoxDecoration(
+              color: isHovered
+                  ? UbColors.cyan.withValues(alpha: 0.16)
+                  : (canTapMoveHere ? UbColors.cyan.withValues(alpha: 0.05) : Colors.transparent),
+              border: Border(
+                bottom: BorderSide(
+                  color: isHovered ? UbColors.cyan : Colors.white10,
+                  width: isHovered ? 1.5 : 1,
+                ),
               ),
             ),
-            title: Text(m.name, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
-            subtitle: Text(
-              '${m.statusKaryawan} · ${m.line}${m.noreg.isNotEmpty ? ' · ${m.noreg}' : ''}',
-              style: const TextStyle(fontSize: 11, color: UbColors.textMuted),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                SizedBox(
+                  width: 26,
+                  child: Text(
+                    isStandby ? '★' : '${jobIdx + 1}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: isStandby ? UbColors.amber : UbColors.textMuted,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  flex: 5,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Text(a.emoji, style: const TextStyle(fontSize: 17)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          a.jobName,
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w800,
+                            height: 1.3,
+                            color: isStandby ? UbColors.amber : UbColors.cyan,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 5,
+                  child: isOff
+                      ? Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: UbColors.rose.withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: UbColors.rose.withValues(alpha: 0.35)),
+                          ),
+                          child: Text(
+                            canTapMoveHere ? '+ Tap pindah ke sini' : 'Off (Kurang MP)',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: canTapMoveHere ? UbColors.cyan : UbColors.rose,
+                            ),
+                          ),
+                        )
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            for (var mIdx = 0; mIdx < a.members.length; mIdx++)
+                              Padding(
+                                padding: EdgeInsets.only(bottom: mIdx == a.members.length - 1 ? 0 : 6),
+                                child: _buildMemberChip(jobIdx, mIdx, a.members[mIdx]),
+                              ),
+                            if (canTapMoveHere)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4),
+                                child: Text(
+                                  '+ Tap baris untuk pindah',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                    color: UbColors.cyan.withValues(alpha: 0.85),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                ),
+              ],
             ),
-            onChanged: (v) {
-              final next = List<AfterProdMember>.from(_members);
-              next[idx] = m.copyWith(present: v);
-              setState(() => _members = next);
-            },
           ),
         );
       },
+    );
+  }
+
+  Widget _buildMemberChip(int jobIdx, int memberIdx, String memberName) {
+    final payload = _MemberDragData(jobIdx: jobIdx, memberIdx: memberIdx, name: memberName);
+    final isSelected = _selectedForMove?.jobIdx == jobIdx && _selectedForMove?.memberIdx == memberIdx;
+
+    Widget buildChipBody({required bool highlighted, required bool dragging}) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+        decoration: BoxDecoration(
+          color: dragging
+              ? UbColors.cyan
+              : (highlighted ? UbColors.cyan.withValues(alpha: 0.22) : Colors.white.withValues(alpha: 0.05)),
+          borderRadius: BorderRadius.circular(9),
+          border: Border.all(
+            color: highlighted || dragging ? UbColors.cyan : Colors.white24,
+            width: highlighted || dragging ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.drag_indicator_rounded,
+              size: 13,
+              color: dragging ? UbColors.bg : (highlighted ? UbColors.cyan : UbColors.textMuted),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              '${memberIdx + 1}. ',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: dragging ? UbColors.bg : UbColors.textMuted,
+              ),
+            ),
+            Expanded(
+              child: Text(
+                memberName,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w800,
+                  color: dragging ? UbColors.bg : Colors.white,
+                  height: 1.2,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return DragTarget<_MemberDragData>(
+      onWillAcceptWithDetails: (details) =>
+          !(details.data.jobIdx == jobIdx && details.data.memberIdx == memberIdx),
+      onAcceptWithDetails: (details) => _handleSwapMembers(details.data, payload),
+      builder: (context, candidateData, rejectedData) {
+        final isSwapTarget = candidateData.isNotEmpty;
+        return LongPressDraggable<_MemberDragData>(
+          data: payload,
+          delay: const Duration(milliseconds: 180),
+          feedback: Material(
+            color: Colors.transparent,
+            child: SizedBox(
+              width: 155,
+              child: buildChipBody(highlighted: true, dragging: true),
+            ),
+          ),
+          childWhenDragging: Opacity(
+            opacity: 0.35,
+            child: buildChipBody(highlighted: false, dragging: false),
+          ),
+          child: InkWell(
+            onTap: () => _handleTapMember(jobIdx, memberIdx, memberName),
+            borderRadius: BorderRadius.circular(9),
+            child: buildChipBody(highlighted: isSelected || isSwapTarget, dragging: false),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildMembersTab() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 2, 12, 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Operator TM Shift $_shift · $_presentCount/${_members.length} hadir (GL & TL dikecualikan)',
+                  style: const TextStyle(fontSize: 11.5, color: UbColors.textMuted, fontWeight: FontWeight.w600),
+                ),
+              ),
+              TextButton(
+                style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                onPressed: () {
+                  setState(() {
+                    _members = _members.map((m) => m.copyWith(present: true)).toList();
+                  });
+                },
+                child: const Text('Hadir Semua', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800)),
+              ),
+              TextButton(
+                style: TextButton.styleFrom(visualDensity: VisualDensity.compact, foregroundColor: UbColors.rose),
+                onPressed: () {
+                  setState(() {
+                    _members = _members.map((m) => m.copyWith(present: false)).toList();
+                  });
+                },
+                child: const Text('Off Semua', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800)),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+            itemCount: _members.length,
+            itemBuilder: (_, idx) {
+              final m = _members[idx];
+              return Card(
+                margin: const EdgeInsets.only(bottom: 6),
+                child: SwitchListTile(
+                  value: m.present,
+                  activeThumbColor: UbColors.emerald,
+                  secondary: CircleAvatar(
+                    radius: 14,
+                    backgroundColor: _statusDotColor(m.statusKaryawan).withValues(alpha: 0.2),
+                    child: Container(
+                      width: 9,
+                      height: 9,
+                      decoration: BoxDecoration(shape: BoxShape.circle, color: _statusDotColor(m.statusKaryawan)),
+                    ),
+                  ),
+                  title: Text(m.name, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+                  subtitle: Text(
+                    '${m.statusKaryawan} · ${m.line}${m.noreg.isNotEmpty ? ' · ${m.noreg}' : ''}',
+                    style: const TextStyle(fontSize: 11, color: UbColors.textMuted),
+                  ),
+                  onChanged: (v) {
+                    final next = List<AfterProdMember>.from(_members);
+                    next[idx] = m.copyWith(present: v);
+                    setState(() => _members = next);
+                  },
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 
@@ -576,14 +1061,14 @@ class _AfterProdScreenState extends State<AfterProdScreen> with SingleTickerProv
     return Scaffold(
       backgroundColor: Colors.transparent,
       floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: UbColors.emerald,
+        backgroundColor: UbColors.cyan,
         foregroundColor: UbColors.bg,
         onPressed: () => _openJobForm(),
         icon: const Icon(Icons.add_rounded),
         label: const Text('Tambah Job', style: TextStyle(fontWeight: FontWeight.w900)),
       ),
       body: ListView.builder(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 84),
+        padding: const EdgeInsets.fromLTRB(12, 4, 12, 84),
         itemCount: _jobs.length,
         itemBuilder: (_, idx) {
           final j = _jobs[idx];
@@ -591,9 +1076,16 @@ class _AfterProdScreenState extends State<AfterProdScreen> with SingleTickerProv
             margin: const EdgeInsets.only(bottom: 8),
             child: ListTile(
               leading: Text(j.emoji, style: const TextStyle(fontSize: 22)),
-              title: Text(j.name, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5)),
+              title: Text(
+                j.name,
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13,
+                  color: j.isActive ? Colors.white : UbColors.textMuted,
+                ),
+              ),
               subtitle: Text(
-                '${j.scope} · Butuh ${j.requiredPeople} MP · ${j.allowedStatuses.join(', ')}',
+                '${j.scope} · Butuh ${j.requiredPeople} MP · ${j.allowedStatuses.length >= 3 ? 'Semua Status' : j.allowedStatuses.join(', ')}',
                 style: const TextStyle(fontSize: 11, color: UbColors.textMuted),
               ),
               trailing: Row(
@@ -633,7 +1125,7 @@ class _AfterProdScreenState extends State<AfterProdScreen> with SingleTickerProv
       );
     }
     return ListView.builder(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
       itemCount: _history.length,
       itemBuilder: (_, idx) {
         final h = _history[idx];
@@ -642,7 +1134,7 @@ class _AfterProdScreenState extends State<AfterProdScreen> with SingleTickerProv
           child: ExpansionTile(
             title: Text('${h.date} · Shift ${h.shift}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5)),
             subtitle: Text(
-              'Hadir ${h.presentCount} / Butuh ${h.requiredCount} · Pulang ${h.jamPulang} WIB',
+              '${h.assignments.length} pos · Pulang ${h.jamPulang} WIB',
               style: const TextStyle(fontSize: 11, color: UbColors.textMuted),
             ),
             children: h.assignments
@@ -665,29 +1157,120 @@ class _AfterProdScreenState extends State<AfterProdScreen> with SingleTickerProv
   }
 }
 
-class _MiniKpi extends StatelessWidget {
-  const _MiniKpi({required this.label, required this.value, required this.color});
+class _ShiftPill extends StatelessWidget {
+  const _ShiftPill({
+    required this.label,
+    required this.active,
+    required this.activeColor,
+    required this.onTap,
+  });
 
   final String label;
-  final String value;
-  final Color color;
+  final bool active;
+  final Color activeColor;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
         decoration: BoxDecoration(
-          color: UbColors.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withValues(alpha: 0.35)),
+          color: active ? activeColor : Colors.transparent,
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: active ? Colors.white : UbColors.textMuted,
+              ),
+            ),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+                color: active ? Colors.white : UbColors.textMuted,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _NavCard extends StatelessWidget {
+  const _NavCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.active,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+        decoration: BoxDecoration(
+          color: active ? const Color(0xFF06B6D4) : UbColors.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: active ? const Color(0xFF22D3EE) : Colors.white12,
+          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: UbColors.textMuted)),
-            const SizedBox(height: 2),
-            Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w900, color: color)),
+            Row(
+              children: [
+                Icon(icon, size: 15, color: active ? UbColors.bg : UbColors.textMuted),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                      color: active ? UbColors.bg : Colors.white,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 3),
+            Text(
+              subtitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: active ? UbColors.bg.withValues(alpha: 0.78) : UbColors.textMuted,
+              ),
+            ),
           ],
         ),
       ),

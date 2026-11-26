@@ -5,7 +5,6 @@ String ubTodayYmd() {
   return '${wib.year}-${wib.month.toString().padLeft(2, '0')}-${wib.day.toString().padLeft(2, '0')}';
 }
 
-
 // =============================================================================
 // 1. UBAI AFTER-PROD 5S MODELS & ENGINE
 // =============================================================================
@@ -16,7 +15,7 @@ class AfterProdMember {
     this.noreg = '',
     this.role = 'TM',
     this.shift = 'RED',
-    this.line = 'Pos 1',
+    this.line = 'UB Assy',
     this.statusKaryawan = 'Tetap',
     this.present = true,
   });
@@ -30,9 +29,30 @@ class AfterProdMember {
   final String statusKaryawan; // Tetap | Kontrak | Vokasi
   final bool present;
 
+  /// GL & TL names that must never appear in After-Prod 5S TM list (even offline).
+  static const Set<String> excludedLeaderNames = {
+    'KAMALUDIN',
+    'MASRURI',
+    'TRI RUSTIANTORO',
+    'SAIFUL RACHIM',
+    'DWI MULYONO',
+    'DADANG SURYADI',
+    'NUNU FATULAH',
+  };
+
   bool get isEligibleFor5S {
-    final r = role.toUpperCase();
-    return r != 'GL' && r != 'TL';
+    final r = role.trim().toUpperCase();
+    if (r == 'GL' || r == 'TL' || r.contains('LEADER')) return false;
+    if (excludedLeaderNames.contains(name.trim().toUpperCase())) return false;
+    return true;
+  }
+
+  static String normalizeStatus(String raw) {
+    final s = raw.trim().toLowerCase();
+    if (s.contains('vokasi') || s.contains('magang')) return 'Vokasi';
+    if (s.contains('kontrak') || s.contains('pkwt')) return 'Kontrak';
+    if (s.contains('tetap') || s.contains('permanen')) return 'Tetap';
+    return raw.trim().isEmpty ? 'Tetap' : raw.trim();
   }
 
   AfterProdMember copyWith({
@@ -58,15 +78,27 @@ class AfterProdMember {
   }
 
   factory AfterProdMember.fromJson(Map<String, dynamic> j) {
+    var role = '${j['role'] ?? ''}'.trim().toUpperCase();
+    if (role.isEmpty) {
+      final note = '${j['note'] ?? j['default_pos'] ?? ''}'.trim().toUpperCase();
+      if (note.startsWith('GL')) {
+        role = 'GL';
+      } else if (note.startsWith('TL')) {
+        role = 'TL';
+      } else {
+        role = 'TM';
+      }
+    }
+    final rawPresent = j.containsKey('present') ? j['present'] : j['hadir'];
     return AfterProdMember(
       id: j['id'] is num ? (j['id'] as num).toInt() : (int.tryParse('${j['id'] ?? 0}') ?? 0),
       name: '${j['name'] ?? ''}'.trim(),
       noreg: '${j['noreg'] ?? ''}'.trim(),
-      role: '${j['role'] ?? 'TM'}'.trim().toUpperCase(),
+      role: role,
       shift: '${j['shift'] ?? 'RED'}'.trim().toUpperCase(),
-      line: '${j['default_pos'] ?? j['line'] ?? 'Pos 1'}'.trim(),
-      statusKaryawan: '${j['status_karyawan'] ?? j['status'] ?? 'Tetap'}'.trim(),
-      present: j['present'] == null ? true : (j['present'] == true || j['present'] == 1),
+      line: '${j['default_pos'] ?? j['line_name'] ?? j['line'] ?? 'UB Assy'}'.trim(),
+      statusKaryawan: normalizeStatus('${j['status_karyawan'] ?? j['status'] ?? 'Tetap'}'),
+      present: rawPresent == null ? true : (rawPresent == true || rawPresent == 1),
     );
   }
 
@@ -86,7 +118,7 @@ class AfterProdJob {
   const AfterProdJob({
     required this.id,
     required this.name,
-    this.emoji = '🧹',
+    this.emoji = '🛠️',
     this.scope = 'COMMON',
     this.requiredPeople = 1,
     this.allowedStatuses = const ['Tetap', 'Kontrak', 'Vokasi'],
@@ -132,34 +164,57 @@ class AfterProdJob {
     final rawAllowed = j['allowed_status'] ?? j['allowedStatuses'];
     List<String> allowed = const ['Tetap', 'Kontrak', 'Vokasi'];
     if (rawAllowed is List) {
-      allowed = rawAllowed.map((e) => '$e'.trim()).where((e) => e.isNotEmpty).toList();
+      final parsed = rawAllowed
+          .map((e) => AfterProdMember.normalizeStatus('$e'))
+          .where((e) => e.isNotEmpty)
+          .toSet()
+          .toList();
+      if (parsed.isNotEmpty) allowed = parsed;
     } else if (rawAllowed is String && rawAllowed.trim().isNotEmpty) {
-      allowed = rawAllowed.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+      final parsed = rawAllowed
+          .split(',')
+          .map((e) => AfterProdMember.normalizeStatus(e))
+          .where((e) => e.isNotEmpty)
+          .toSet()
+          .toList();
+      if (parsed.isNotEmpty) allowed = parsed;
     }
+    final name = '${j['job_name'] ?? j['name'] ?? ''}'.trim();
+    final rawEmoji = '${j['emoji'] ?? ''}'.trim();
+    final rawScope = '${j['shift'] ?? j['scope'] ?? 'COMMON'}'.trim().toUpperCase();
+    final scope = (rawScope == 'RED' || rawScope == 'WHITE') ? rawScope : 'COMMON';
+    final rawActive = j['is_active'];
     return AfterProdJob(
       id: j['id'] is num ? (j['id'] as num).toInt() : (int.tryParse('${j['id'] ?? 0}') ?? 0),
-      name: '${j['name'] ?? j['job_name'] ?? ''}'.trim(),
-      emoji: '${j['emoji'] ?? '🧹'}'.trim(),
-      scope: '${j['scope'] ?? 'COMMON'}'.trim().toUpperCase(),
+      name: name,
+      emoji: rawEmoji.isNotEmpty ? rawEmoji : AfterProdEngine.jobEmoji(name),
+      scope: scope,
       requiredPeople: j['required_people'] is num
           ? (j['required_people'] as num).toInt()
           : (int.tryParse('${j['required_people'] ?? 1}') ?? 1),
-      allowedStatuses: allowed.isEmpty ? const ['Tetap', 'Kontrak', 'Vokasi'] : allowed,
+      allowedStatuses: allowed,
       preferredLine: '${j['preferred_line'] ?? j['line'] ?? ''}'.trim(),
-      isActive: j['is_active'] == null ? true : (j['is_active'] == true || j['is_active'] == 1),
+      isActive: rawActive == null ? true : (rawActive == true || rawActive == 1 || rawActive == '1'),
     );
   }
 
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'emoji': emoji,
-        'scope': scope,
-        'required_people': requiredPeople,
-        'allowed_status': allowedStatuses.join(','),
-        'preferred_line': preferredLine,
-        'is_active': isActive ? 1 : 0,
-      };
+  Map<String, dynamic> toJson() {
+    // Next.js /api/ub?action=save_after_job expects job_name, shift, line, required_people, allowed_status, is_active
+    final allSelected = allowedStatuses.length >= 3;
+    return {
+      'id': id,
+      'job_name': name,
+      'name': name,
+      'emoji': emoji,
+      'shift': scope,
+      'scope': scope,
+      'required_people': requiredPeople,
+      'allowed_status': allSelected ? '' : allowedStatuses.join(','),
+      'line': preferredLine.isEmpty ? 'All' : preferredLine,
+      'preferred_line': preferredLine,
+      'is_active': isActive ? 1 : 0,
+    };
+  }
 }
 
 class AfterProdAssignment {
@@ -194,26 +249,40 @@ class AfterProdAssignment {
   }
 
   factory AfterProdAssignment.fromJson(Map<String, dynamic> j) {
-    final rawMembers = j['members'];
+    final rawMembers = j['petugas'] ?? j['members'];
     final members = rawMembers is List
-        ? rawMembers.map((e) => '$e').where((e) => e.isNotEmpty).toList()
+        ? rawMembers.map((e) => '$e'.trim()).where((e) => e.isNotEmpty).toList()
         : <String>[];
+    final jobName = '${j['job_name'] ?? j['job'] ?? j['name'] ?? ''}'.trim();
+    final rawEmoji = '${j['emoji'] ?? ''}'.trim();
+    final status = '${j['status'] ?? (members.isEmpty ? 'Off (Kekurangan MP)' : 'Terisi')}'.trim();
+    final isStandby = status == 'Sisa MP' ||
+        jobName.toLowerCase().contains('standby') ||
+        jobName.toLowerCase().contains('extra');
+    final parsedId = j['job_id'] is num
+        ? (j['job_id'] as num).toInt()
+        : (int.tryParse('${j['job_id'] ?? ''}') ?? (isStandby ? -1 : 0));
     return AfterProdAssignment(
-      jobId: j['job_id'] is num ? (j['job_id'] as num).toInt() : 0,
-      jobName: '${j['job_name'] ?? j['name'] ?? ''}'.trim(),
-      emoji: '${j['emoji'] ?? '🧹'}'.trim(),
-      requiredPeople: j['required_people'] is num ? (j['required_people'] as num).toInt() : 1,
+      jobId: isStandby ? -1 : parsedId,
+      jobName: jobName,
+      emoji: rawEmoji.isNotEmpty ? rawEmoji : AfterProdEngine.jobEmoji(jobName),
+      requiredPeople: j['required_people'] is num
+          ? (j['required_people'] as num).toInt()
+          : (members.isNotEmpty ? members.length : 1),
       members: members,
-      status: '${j['status'] ?? 'Terisi'}'.trim(),
+      status: status,
     );
   }
 
   Map<String, dynamic> toJson() => {
         'job_id': jobId,
+        'job': jobName,
         'job_name': jobName,
         'emoji': emoji,
         'required_people': requiredPeople,
+        'petugas': members,
         'members': members,
+        'assigned_members': members.asMap().entries.map((e) => '${e.key + 1}. ${e.value}').join('\n'),
         'status': status,
       };
 }
@@ -236,17 +305,19 @@ class AfterProdHistoryRecord {
   final List<AfterProdAssignment> assignments;
 
   factory AfterProdHistoryRecord.fromJson(Map<String, dynamic> j) {
-    final rawList = j['assignments'] is List ? j['assignments'] as List : const [];
+    final rawList = (j['tasks'] is List ? j['tasks'] : j['assignments']) as List? ?? const [];
+    final assignments = rawList
+        .whereType<Map>()
+        .map((e) => AfterProdAssignment.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+    final totalAssigned = assignments.fold<int>(0, (acc, a) => acc + a.members.length);
     return AfterProdHistoryRecord(
-      date: '${j['date'] ?? ''}',
-      shift: '${j['shift'] ?? 'RED'}',
-      jamPulang: '${j['jam_pulang'] ?? '18.15'}',
-      presentCount: j['present_count'] is num ? (j['present_count'] as num).toInt() : 0,
-      requiredCount: j['required_count'] is num ? (j['required_count'] as num).toInt() : 0,
-      assignments: rawList
-          .whereType<Map>()
-          .map((e) => AfterProdAssignment.fromJson(Map<String, dynamic>.from(e)))
-          .toList(),
+      date: '${j['date'] ?? j['tanggal'] ?? ''}',
+      shift: '${j['shift'] ?? 'RED'}'.toUpperCase(),
+      jamPulang: '${j['jamPulang'] ?? j['jam_pulang'] ?? '18.15'}',
+      presentCount: j['present_count'] is num ? (j['present_count'] as num).toInt() : totalAssigned,
+      requiredCount: j['required_count'] is num ? (j['required_count'] as num).toInt() : totalAssigned,
+      assignments: assignments,
     );
   }
 
@@ -254,14 +325,29 @@ class AfterProdHistoryRecord {
         'date': date,
         'shift': shift,
         'jam_pulang': jamPulang,
+        'jamPulang': jamPulang,
         'present_count': presentCount,
         'required_count': requiredCount,
+        'tasks': assignments.map((e) => e.toJson()).toList(),
         'assignments': assignments.map((e) => e.toJson()).toList(),
       };
 }
 
 class AfterProdEngine {
   AfterProdEngine._();
+
+  /// 1:1 with `getJobEmoji` in `ubnetwork/app/productivity/afterproduksi/page.tsx`.
+  static String jobEmoji(String jobName) {
+    final name = jobName.toLowerCase();
+    if (name.contains('sampah') || name.contains('limbah')) return '🗑️';
+    if (name.contains('galon') || name.contains('air') || name.contains('minum')) return '💧';
+    if (name.contains('tamu') || name.contains('meeting') || name.contains('office')) return '🤝';
+    if (name.contains('standby') || name.contains('sisa') || name.contains('extra')) return '💡';
+    if (name.contains('area') || name.contains('oasis') || name.contains('agv')) return '🌳';
+    if (name.contains('robot') || name.contains('pit')) return '🤖';
+    if (name.contains('tool') || name.contains('gun') || name.contains('jig')) return '🛠️';
+    return '🛠️';
+  }
 
   /// 1:1 with `executeGenerateJobs` in `ubnetwork/app/productivity/afterproduksi/page.tsx`:
   /// - Shuffles eligible present TMs (excludes GL & TL)
@@ -295,12 +381,14 @@ class AfterProdEngine {
     for (final job in activeJobs) {
       final allowedLower = job.allowedStatuses.map((s) => s.toLowerCase()).toSet();
       final candidates = pool.where((m) {
-        if (allowedLower.isEmpty) return true;
-        return allowedLower.any((a) => m.statusKaryawan.toLowerCase().contains(a) || a.contains(m.statusKaryawan.toLowerCase()));
+        if (allowedLower.isEmpty || allowedLower.length >= 3) return true;
+        return allowedLower.any(
+          (a) => m.statusKaryawan.toLowerCase().contains(a) || a.contains(m.statusKaryawan.toLowerCase()),
+        );
       }).toList();
 
       // Prioritize matching preferredLine
-      if (job.preferredLine.isNotEmpty) {
+      if (job.preferredLine.isNotEmpty && job.preferredLine.toLowerCase() != 'all') {
         final pref = job.preferredLine.toLowerCase();
         candidates.sort((a, b) {
           final am = a.line.toLowerCase().contains(pref) ? 0 : 1;
@@ -314,7 +402,7 @@ class AfterProdEngine {
           AfterProdAssignment(
             jobId: job.id,
             jobName: job.name,
-            emoji: job.emoji,
+            emoji: job.emoji.isNotEmpty ? job.emoji : jobEmoji(job.name),
             requiredPeople: job.requiredPeople,
             members: const [],
             status: 'Off (Kekurangan MP)',
@@ -332,7 +420,7 @@ class AfterProdEngine {
         AfterProdAssignment(
           jobId: job.id,
           jobName: job.name,
-          emoji: job.emoji,
+          emoji: job.emoji.isNotEmpty ? job.emoji : jobEmoji(job.name),
           requiredPeople: job.requiredPeople,
           members: picked.map((e) => e.name).toList(),
           status: 'Terisi',
@@ -345,7 +433,7 @@ class AfterProdEngine {
         AfterProdAssignment(
           jobId: -1,
           jobName: 'Standby / Extra',
-          emoji: '🛡️',
+          emoji: '💡',
           requiredPeople: 0,
           members: pool.map((e) => e.name).toList(),
           status: 'Sisa MP',
@@ -354,6 +442,85 @@ class AfterProdEngine {
     }
 
     return result;
+  }
+
+  /// Moves [memberName] from [fromJobIdx] to [toJobIdx] (1:1 with web `moveMember`).
+  static List<AfterProdAssignment> moveMember({
+    required List<AfterProdAssignment> assignments,
+    required int fromJobIdx,
+    required String memberName,
+    required int toJobIdx,
+  }) {
+    if (fromJobIdx == toJobIdx ||
+        fromJobIdx < 0 ||
+        fromJobIdx >= assignments.length ||
+        toJobIdx < 0 ||
+        toJobIdx >= assignments.length) {
+      return assignments;
+    }
+    final next = List<AfterProdAssignment>.from(assignments);
+    final srcRow = next[fromJobIdx];
+    final dstRow = next[toJobIdx];
+    if (!srcRow.members.contains(memberName)) return assignments;
+
+    final srcMembers = List<String>.from(srcRow.members)..remove(memberName);
+    final dstMembers = List<String>.from(dstRow.members);
+    if (!dstMembers.contains(memberName)) {
+      dstMembers.add(memberName);
+    }
+
+    final srcIsStandby = srcRow.jobId == -1 || srcRow.status == 'Sisa MP';
+    final dstIsStandby = dstRow.jobId == -1 || dstRow.status == 'Sisa MP';
+
+    next[fromJobIdx] = srcRow.copyWith(
+      members: srcMembers,
+      status: srcIsStandby
+          ? 'Sisa MP'
+          : (srcMembers.isEmpty ? 'Off (Kekurangan MP)' : 'Terisi'),
+    );
+    next[toJobIdx] = dstRow.copyWith(
+      members: dstMembers,
+      status: dstIsStandby ? 'Sisa MP' : 'Terisi',
+    );
+    return next;
+  }
+
+  /// Swaps two assigned members 1-on-1 (1:1 with web `swapMembers`).
+  static List<AfterProdAssignment> swapMembers({
+    required List<AfterProdAssignment> assignments,
+    required int aJobIdx,
+    required int aMemberIdx,
+    required int bJobIdx,
+    required int bMemberIdx,
+  }) {
+    if (aJobIdx == bJobIdx && aMemberIdx == bMemberIdx) return assignments;
+    if (aJobIdx < 0 || aJobIdx >= assignments.length || bJobIdx < 0 || bJobIdx >= assignments.length) {
+      return assignments;
+    }
+    final rowA = assignments[aJobIdx];
+    final rowB = assignments[bJobIdx];
+    if (aMemberIdx < 0 || aMemberIdx >= rowA.members.length || bMemberIdx < 0 || bMemberIdx >= rowB.members.length) {
+      return assignments;
+    }
+
+    final next = List<AfterProdAssignment>.from(assignments);
+    final nameA = rowA.members[aMemberIdx];
+    final nameB = rowB.members[bMemberIdx];
+
+    if (aJobIdx == bJobIdx) {
+      final list = List<String>.from(rowA.members);
+      list[aMemberIdx] = nameB;
+      list[bMemberIdx] = nameA;
+      next[aJobIdx] = rowA.copyWith(members: list);
+    } else {
+      final listA = List<String>.from(rowA.members);
+      final listB = List<String>.from(rowB.members);
+      listA[aMemberIdx] = nameB;
+      listB[bMemberIdx] = nameA;
+      next[aJobIdx] = rowA.copyWith(members: listA);
+      next[bJobIdx] = rowB.copyWith(members: listB);
+    }
+    return next;
   }
 
   static String buildWhatsappText({

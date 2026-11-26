@@ -12,6 +12,7 @@ class ProductivityOpsStore {
   ProductivityOpsStore._();
   static final ProductivityOpsStore instance = ProductivityOpsStore._();
 
+  static String _afterMembersKey(String shift) => 'ubf_after_members_v1_$shift';
   static String _afterJobsKey(String shift) => 'ubf_after_jobs_v1_$shift';
   static String _afterHistoryKey(String shift) => 'ubf_after_hist_v1_$shift';
   static const String _tasksKey = 'ubf_task_hub_v1';
@@ -19,15 +20,37 @@ class ProductivityOpsStore {
   static const String _kaizenKey = 'ubf_prod_kaizen_v1';
 
   // ===========================================================================
-  // 1. AFTER-PROD 5S — 1:1 with bungtemin.net/ub/api
+  // 1. AFTER-PROD 5S — 1:1 with Next.js /api/ub (Atlas + MySQL) & /api/afterproduksi/history
   // ===========================================================================
   Future<({List<AfterProdMember> members, bool fromServer})> fetchAfterMembers(String shift) async {
+    // 1. Primary: Next.js /api/ub?action=get_members&shift=...
+    final webRes = await UbWebApi.instance.getJson(
+      '/api/ub',
+      query: {'action': 'get_members', 'shift': shift},
+    );
+    if (webRes.ok && webRes.map['status'] == 'success' && webRes.map['data'] is List) {
+      final list = (webRes.map['data'] as List)
+          .whereType<Map>()
+          .map((m) => AfterProdMember.fromJson(Map<String, dynamic>.from(m)))
+          .where((m) => m.isEligibleFor5S)
+          .toList();
+      if (list.isNotEmpty) {
+        await _saveAfterMembersCache(shift, list);
+        return (members: list, fromServer: true);
+      }
+    }
+
+    // 2. Fallback: Direct bungtemin.net/ub/api with x-ub-api-key
     final cfg = await LocalStore.instance.getSettings();
     final base = cfg.serverApiUrl.split('?').first.trim();
     if (base.isNotEmpty) {
       try {
+        final headers = <String, String>{'Accept': 'application/json'};
+        if (cfg.apiKey.trim().isNotEmpty) {
+          headers['x-ub-api-key'] = cfg.apiKey.trim();
+        }
         final res = await http
-            .get(Uri.parse('$base?action=get_members&shift=$shift'), headers: const {'Accept': 'application/json'})
+            .get(Uri.parse('$base?action=get_members&shift=$shift'), headers: headers)
             .timeout(const Duration(seconds: 10));
         if (res.statusCode >= 200 && res.statusCode < 300) {
           final json = jsonDecode(res.body);
@@ -37,135 +60,214 @@ class ProductivityOpsStore {
                 .map((m) => AfterProdMember.fromJson(Map<String, dynamic>.from(m)))
                 .where((m) => m.isEligibleFor5S)
                 .toList();
-            if (list.isNotEmpty) return (members: list, fromServer: true);
-          }
-        }
-      } catch (_) {}
-    }
-
-    final fallback = UbMasterData.defaultMembers(shift)
-        .asMap()
-        .entries
-        .map(
-          (e) => AfterProdMember(
-            id: e.key + 1,
-            name: e.value.name,
-            noreg: e.value.noreg,
-            role: 'TM',
-            shift: shift,
-            line: 'Pos ${(e.key % 6) + 1}',
-            statusKaryawan: e.key % 5 == 0 ? 'Vokasi' : (e.key % 3 == 0 ? 'Kontrak' : 'Tetap'),
-          ),
-        )
-        .toList();
-    return (members: fallback, fromServer: false);
-  }
-
-  Future<({List<AfterProdJob> jobs, bool fromServer})> fetchAfterJobs(String shift) async {
-    final cfg = await LocalStore.instance.getSettings();
-    final base = cfg.serverApiUrl.split('?').first.trim();
-    if (base.isNotEmpty) {
-      try {
-        final res = await http
-            .get(Uri.parse('$base?action=get_after_jobs&shift=$shift'), headers: const {'Accept': 'application/json'})
-            .timeout(const Duration(seconds: 10));
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          final json = jsonDecode(res.body);
-          if (json is Map && json['status'] == 'success' && json['data'] is List) {
-            final parsed = (json['data'] as List)
-                .whereType<Map>()
-                .map((m) => AfterProdJob.fromJson(Map<String, dynamic>.from(m)))
-                .toList();
-            if (parsed.isNotEmpty) {
-              await _saveAfterJobsCache(shift, parsed);
-              return (jobs: parsed, fromServer: true);
+            if (list.isNotEmpty) {
+              await _saveAfterMembersCache(shift, list);
+              return (members: list, fromServer: true);
             }
           }
         }
       } catch (_) {}
     }
 
+    // 3. Cached server members (offline)
+    final cached = await _loadAfterMembersCache(shift);
+    if (cached.isNotEmpty) {
+      return (members: cached.where((m) => m.isEligibleFor5S).toList(), fromServer: false);
+    }
+
+    // 4. Hardcoded fallback (strictly excludes GL & TL via note + excludedLeaderNames)
+    final fallback = UbMasterData.defaultMembers(shift)
+        .asMap()
+        .entries
+        .map((e) {
+          final noteUpper = e.value.note.trim().toUpperCase();
+          final role = noteUpper.startsWith('GL')
+              ? 'GL'
+              : (noteUpper.startsWith('TL') ? 'TL' : 'TM');
+          return AfterProdMember(
+            id: e.value.id > 0 ? e.value.id : (e.key + 1),
+            name: e.value.name,
+            noreg: e.value.noreg,
+            role: role,
+            shift: shift,
+            line: e.value.note.contains('•') ? e.value.note.split('•').last.trim() : 'UB Assy',
+            statusKaryawan: e.value.noreg.startsWith('26')
+                ? 'Vokasi'
+                : (e.key % 3 == 0 ? 'Kontrak' : 'Tetap'),
+          );
+        })
+        .where((m) => m.isEligibleFor5S)
+        .toList();
+    return (members: fallback, fromServer: false);
+  }
+
+  Future<({List<AfterProdJob> jobs, bool fromServer})> fetchAfterJobs(String shift) async {
+    // 1. Primary: Next.js /api/ub?action=get_after_jobs&shift=... (MongoDB Atlas)
+    final webRes = await UbWebApi.instance.getJson(
+      '/api/ub',
+      query: {'action': 'get_after_jobs', 'shift': shift},
+    );
+    if (webRes.ok && webRes.map['status'] == 'success' && webRes.map['data'] is List) {
+      final parsed = (webRes.map['data'] as List)
+          .whereType<Map>()
+          .map((m) => AfterProdJob.fromJson(Map<String, dynamic>.from(m)))
+          .where((j) => j.name.isNotEmpty)
+          .toList();
+      if (parsed.isNotEmpty) {
+        await _saveAfterJobsCache(shift, parsed);
+        return (jobs: parsed, fromServer: true);
+      }
+    }
+
+    // 2. Fallback: Local cache
     final cached = await _loadAfterJobsCache(shift);
     if (cached.isNotEmpty) return (jobs: cached, fromServer: false);
 
+    // 3. Last resort defaults
     final defaults = _defaultAfterJobs();
     await _saveAfterJobsCache(shift, defaults);
     return (jobs: defaults, fromServer: false);
   }
 
+  /// Fetch saved assignments for today (or latest shift record) from Next.js MongoDB Atlas.
+  Future<({List<AfterProdAssignment> tasks, String? jamPulang, String? date, bool fromServer})> fetchAfterTasks(
+    String shift, {
+    String? date,
+  }) async {
+    final targetDate = date ?? ubTodayYmd();
+    final webRes = await UbWebApi.instance.getJson(
+      '/api/ub',
+      query: {'action': 'get_after_tasks', 'shift': shift, 'date': targetDate},
+    );
+    if (webRes.ok && webRes.map['status'] == 'success' && webRes.map['data'] is Map) {
+      final data = Map<String, dynamic>.from(webRes.map['data'] as Map);
+      final rawTasks = data['tasks'];
+      if (rawTasks is List && rawTasks.isNotEmpty) {
+        final tasks = rawTasks
+            .whereType<Map>()
+            .map((m) => AfterProdAssignment.fromJson(Map<String, dynamic>.from(m)))
+            .toList();
+        return (
+          tasks: tasks,
+          jamPulang: '${data['jam_pulang'] ?? ''}'.trim().isEmpty ? null : '${data['jam_pulang']}',
+          date: '${data['tanggal'] ?? targetDate}',
+          fromServer: true,
+        );
+      }
+    }
+    return (tasks: const <AfterProdAssignment>[], jamPulang: null, date: null, fromServer: false);
+  }
+
   Future<({bool synced, String message})> saveAfterJob(String shift, AfterProdJob job) async {
     final list = List<AfterProdJob>.from(await _loadAfterJobsCache(shift));
     final idx = list.indexWhere((e) => e.id == job.id && job.id > 0);
+    final effectiveJob = job.id > 0
+        ? job
+        : job.copyWith(id: DateTime.now().millisecondsSinceEpoch % 1000000000);
     if (idx >= 0) {
-      list[idx] = job;
+      list[idx] = effectiveJob;
     } else {
-      final nextId = list.fold<int>(0, (acc, e) => e.id > acc ? e.id : acc) + 1;
-      list.add(job.copyWith(id: job.id > 0 ? job.id : nextId));
+      list.add(effectiveJob);
     }
     await _saveAfterJobsCache(shift, list);
 
-    final cfg = await LocalStore.instance.getSettings();
-    final base = cfg.serverApiUrl.split('?').first.trim();
-    if (base.isEmpty) return (synced: false, message: 'Pekerjaan tersimpan lokal.');
-    try {
-      final res = await http
-          .post(
-            Uri.parse('$base?action=save_after_job&shift=$shift'),
-            headers: const {'Content-Type': 'application/json', 'Accept': 'application/json'},
-            body: jsonEncode(job.toJson()),
-          )
-          .timeout(const Duration(seconds: 10));
-      if (res.statusCode >= 200 && res.statusCode < 300) {
-        return (synced: true, message: 'Pekerjaan "${job.name}" tersimpan ke MySQL.');
-      }
-    } catch (_) {}
-    return (synced: false, message: 'Pekerjaan "${job.name}" tersimpan lokal (offline).');
+    final webRes = await UbWebApi.instance.postJson(
+      '/api/ub',
+      effectiveJob.toJson(),
+      query: {'action': 'save_after_job', 'shift': shift},
+    );
+    if (webRes.ok && webRes.map['status'] == 'success') {
+      return (synced: true, message: 'Pekerjaan "${effectiveJob.name}" tersimpan ke server.');
+    }
+    return (synced: false, message: 'Pekerjaan "${effectiveJob.name}" tersimpan lokal (offline).');
   }
 
   Future<({bool synced, String message})> deleteAfterJob(String shift, int jobId) async {
     final list = (await _loadAfterJobsCache(shift)).where((e) => e.id != jobId).toList();
     await _saveAfterJobsCache(shift, list);
 
-    final cfg = await LocalStore.instance.getSettings();
-    final base = cfg.serverApiUrl.split('?').first.trim();
-    if (base.isEmpty) return (synced: false, message: 'Pekerjaan dihapus lokal.');
-    try {
-      final res = await http
-          .post(Uri.parse('$base?action=delete_after_job&id=$jobId&shift=$shift'))
-          .timeout(const Duration(seconds: 10));
-      if (res.statusCode >= 200 && res.statusCode < 300) {
-        return (synced: true, message: 'Pekerjaan dihapus dari MySQL.');
-      }
-    } catch (_) {}
+    final webRes = await UbWebApi.instance.postJson(
+      '/api/ub',
+      {'id': jobId, 'shift': shift},
+      query: {'action': 'delete_after_job', 'id': '$jobId', 'shift': shift},
+    );
+    if (webRes.ok && webRes.map['status'] == 'success') {
+      return (synced: true, message: 'Pekerjaan dihapus dari server.');
+    }
     return (synced: false, message: 'Pekerjaan dihapus dari lokal.');
   }
 
   Future<({bool synced, String message})> saveAfterHistory(AfterProdHistoryRecord record) async {
-    final hist = List<AfterProdHistoryRecord>.from(await loadAfterHistory(record.shift));
+    final hist = List<AfterProdHistoryRecord>.from(await _loadAfterHistoryCache(record.shift));
     hist.removeWhere((h) => h.date == record.date && h.shift == record.shift);
     hist.insert(0, record);
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_afterHistoryKey(record.shift), jsonEncode(hist.take(30).map((e) => e.toJson()).toList()));
+    await _saveAfterHistoryCache(record.shift, hist.take(60).toList());
 
-    final cfg = await LocalStore.instance.getSettings();
-    final base = cfg.serverApiUrl.split('?').first.trim();
-    if (base.isEmpty) return (synced: false, message: 'Jadwal 5S tersimpan lokal.');
-    try {
-      final res = await http
-          .post(
-            Uri.parse('$base?action=save_after_tasks'),
-            headers: const {'Content-Type': 'application/json', 'Accept': 'application/json'},
-            body: jsonEncode(record.toJson()),
-          )
-          .timeout(const Duration(seconds: 10));
-      if (res.statusCode >= 200 && res.statusCode < 300) {
-        return (synced: true, message: 'Jadwal 5S ${record.date} tersimpan ke MySQL!');
-      }
-    } catch (_) {}
+    final tasksJson = record.assignments.map((e) => e.toJson()).toList();
+    final resTasks = await UbWebApi.instance.postJson(
+      '/api/ub',
+      {
+        'shift': record.shift,
+        'date': record.date,
+        'jam_pulang': record.jamPulang,
+        'tasks': tasksJson,
+      },
+      query: {'action': 'save_after_tasks'},
+    );
+    final resHist = await UbWebApi.instance.postJson(
+      '/api/afterproduksi/history',
+      {
+        'date': record.date,
+        'shift': record.shift,
+        'jamPulang': record.jamPulang,
+        'tasks': tasksJson,
+      },
+    );
+    if (resTasks.ok || resHist.ok) {
+      return (synced: true, message: 'Jadwal 5S ${record.date} tersimpan ke server!');
+    }
     return (synced: false, message: 'Jadwal 5S ${record.date} tersimpan lokal (offline).');
   }
 
   Future<List<AfterProdHistoryRecord>> loadAfterHistory(String shift) async {
+    final webRes = await UbWebApi.instance.getJson(
+      '/api/afterproduksi/history',
+      query: {'shift': shift, 'limit': '60'},
+    );
+    if (webRes.ok && webRes.map['items'] is List) {
+      final remote = (webRes.map['items'] as List)
+          .whereType<Map>()
+          .map((m) => AfterProdHistoryRecord.fromJson(Map<String, dynamic>.from(m)))
+          .toList();
+      if (remote.isNotEmpty) {
+        await _saveAfterHistoryCache(shift, remote);
+        return remote;
+      }
+    }
+    return _loadAfterHistoryCache(shift);
+  }
+
+  Future<List<AfterProdMember>> _loadAfterMembersCache(String shift) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_afterMembersKey(shift));
+    if (raw == null || raw.isEmpty) return [];
+    try {
+      final decoded = jsonDecode(raw) as List<dynamic>;
+      return decoded
+          .whereType<Map>()
+          .map((m) => AfterProdMember.fromJson(Map<String, dynamic>.from(m)))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Future<void> _saveAfterMembersCache(String shift, List<AfterProdMember> members) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_afterMembersKey(shift), jsonEncode(members.map((e) => e.toJson()).toList()));
+  }
+
+  Future<List<AfterProdHistoryRecord>> _loadAfterHistoryCache(String shift) async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_afterHistoryKey(shift));
     if (raw == null || raw.isEmpty) return [];
@@ -178,6 +280,11 @@ class ProductivityOpsStore {
     } catch (_) {
       return [];
     }
+  }
+
+  Future<void> _saveAfterHistoryCache(String shift, List<AfterProdHistoryRecord> hist) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_afterHistoryKey(shift), jsonEncode(hist.map((e) => e.toJson()).toList()));
   }
 
   Future<List<AfterProdJob>> _loadAfterJobsCache(String shift) async {
@@ -198,12 +305,10 @@ class ProductivityOpsStore {
   }
 
   List<AfterProdJob> _defaultAfterJobs() => const [
-        AfterProdJob(id: 1, name: 'Sapu & Pel Area Pos 1–3', emoji: '🧹', scope: 'COMMON', requiredPeople: 2),
-        AfterProdJob(id: 2, name: 'Bersihkan Jig & Tip Dresser', emoji: '🔧', scope: 'COMMON', requiredPeople: 2, allowedStatuses: ['Tetap', 'Kontrak']),
-        AfterProdJob(id: 3, name: 'Buang Scrap & Spatter Robot', emoji: '♻️', scope: 'COMMON', requiredPeople: 2),
-        AfterProdJob(id: 4, name: 'Rapikan Trolley & Part Kosong', emoji: '🛒', scope: 'COMMON', requiredPeople: 2),
-        AfterProdJob(id: 5, name: 'Cek Kebocoran Angin & Matikan Panel', emoji: '⚡', scope: 'COMMON', requiredPeople: 1, allowedStatuses: ['Tetap']),
-        AfterProdJob(id: 6, name: '5S Area Istirahat & Papan KPI', emoji: '📋', scope: 'COMMON', requiredPeople: 1, allowedStatuses: ['Vokasi', 'Kontrak', 'Tetap']),
+        AfterProdJob(id: 1, name: '5R Rest Area ALL + Renew Stiker Kaki', emoji: '🌳', scope: 'COMMON', requiredPeople: 1),
+        AfterProdJob(id: 2, name: '5R Jalur Tamu + Renew Stiker', emoji: '🤝', scope: 'COMMON', requiredPeople: 1),
+        AfterProdJob(id: 3, name: '5R PNS (pojok ngumpet selip)', emoji: '🛠️', scope: 'COMMON', requiredPeople: 1),
+        AfterProdJob(id: 4, name: '5R Buang Sampah', emoji: '🗑️', scope: 'COMMON', requiredPeople: 1),
       ];
 
   // ===========================================================================
@@ -310,6 +415,21 @@ class ProductivityOpsStore {
     double taktTime,
   ) async {
     final cfg = await LocalStore.instance.getSettings();
+    final webRes = await UbWebApi.instance.getJson(
+      '/api/ub',
+      query: {'action': 'templates', 'takt_time': '$taktTime'},
+    );
+    if (webRes.ok && webRes.map['status'] == 'success' && webRes.map['data'] is List) {
+      final parsed = (webRes.map['data'] as List)
+          .whereType<Map>()
+          .map((m) => ShiftTemplateModel.fromJson(Map<String, dynamic>.from(m)))
+          .toList();
+      if (parsed.isNotEmpty) {
+        await _saveTemplatesCache(parsed);
+        return (templates: parsed, masterTaktTime: cfg.taktTime, fromServer: true);
+      }
+    }
+
     final base = cfg.serverApiUrl.split('?').first.trim();
     if (base.isNotEmpty) {
       try {
@@ -349,6 +469,15 @@ class ProductivityOpsStore {
       list.add(tpl);
     }
     await _saveTemplatesCache(list);
+
+    final webRes = await UbWebApi.instance.postJson(
+      '/api/ub',
+      tpl.toJson(),
+      query: {'action': 'save_template'},
+    );
+    if (webRes.ok && webRes.map['status'] == 'success') {
+      return (synced: true, message: 'Template "${tpl.name}" tersimpan ke server!');
+    }
 
     final cfg = await LocalStore.instance.getSettings();
     final base = cfg.serverApiUrl.split('?').first.trim();
