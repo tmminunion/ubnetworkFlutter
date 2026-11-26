@@ -31,7 +31,7 @@ void main() {
     );
     final cbuSum = CbuCkdMath.summarizeCbu(cbuDays, models);
     expect(cbuSum.grandTotal, 200);
-    expect(cbuSum.topModelName, 'Innova Zenix');
+    expect(cbuSum.topModelName, 'INNOVA ZENIX');
     expect(cbuSum.ratioDays, 1);
 
     final ckdDays = CbuCkdMath.aggregateCkd(
