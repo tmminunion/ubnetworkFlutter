@@ -235,7 +235,7 @@ class _DisplayPaperScreenState extends State<DisplayPaperScreen> {
     if (nc == cIdx && nr == rIdx) return;
     setState(() {
       _pillar = cols[nc];
-      _rowKey = rows[nr];
+      _rowKey = rows[nr].key;
       _kaizenPage = 1;
     });
     _resetZoom();
