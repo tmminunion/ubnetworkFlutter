@@ -5,6 +5,9 @@ import '../../data/hub_catalog.dart';
 import '../checksheet/checksheet_screen.dart';
 import '../safety/kyt_monitoring_screen.dart';
 import '../safety/safety_temuan_screen.dart';
+import '../safety/safety_bira_screen.dart';
+import '../safety/safety_device_screen.dart';
+import '../safety/safety_kpi_screen.dart';
 import '../safety/sga_group_screen.dart';
 import 'display_board_screen.dart';
 
@@ -29,6 +32,27 @@ class SubHubScreen extends StatelessWidget {
     if (mod.route == '/kyt/monitoring') {
       Navigator.of(context).push(
         MaterialPageRoute<void>(builder: (_) => const KytMonitoringScreen()),
+      );
+      return;
+    }
+
+    if (mod.route == '/safety/device') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const SafetyDeviceScreen()),
+      );
+      return;
+    }
+
+    if (mod.route == '/safety/bira') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const SafetyBiraScreen()),
+      );
+      return;
+    }
+
+    if (mod.route == '/safety/kpi') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const SafetyKpiScreen()),
       );
       return;
     }
