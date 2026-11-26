@@ -8,6 +8,10 @@ import '../../models/checksheet_models.dart';
 import '../../services/auth_service.dart';
 import '../../services/local_store.dart';
 import '../checksheet/checksheet_screen.dart';
+import '../kaizen/five_r_screen.dart';
+import '../kaizen/qcc_screen.dart';
+import '../kaizen/sw_observasi_screen.dart';
+import '../kaizen/tpm_screen.dart';
 import '../quick/docs_screen.dart';
 import '../quick/henkaten_board_screen.dart';
 import '../quick/postit_board_screen.dart';
@@ -15,6 +19,8 @@ import '../quick/ubdrive_screen.dart';
 import 'display_board_screen.dart';
 import '../productivity/after_prod_screen.dart';
 import '../productivity/task_hub_screen.dart';
+import '../env/env_daily_screen.dart';
+import '../env/env_temuan_screen.dart';
 import '../safety/sga_group_screen.dart';
 import 'sub_hub_screen.dart';
 
@@ -121,6 +127,30 @@ class _HubScreenState extends State<HubScreen> {
       );
       return;
     }
+    if (route == '/qcc') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const QccScreen()),
+      );
+      return;
+    }
+    if (route == '/tpm') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const TpmScreen()),
+      );
+      return;
+    }
+    if (route == '/5r') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const FiveRScreen()),
+      );
+      return;
+    }
+    if (route == '/sw') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const SwObservasiScreen()),
+      );
+      return;
+    }
     if (route == '/henkaten') {
       Navigator.of(context).push(
         MaterialPageRoute<void>(builder: (_) => const HenkatenBoardScreen()),
@@ -157,8 +187,16 @@ class _HubScreenState extends State<HubScreen> {
       );
       return;
     }
-    if (route == '/env/daily' || route == '/env/temuan') {
-      _openSubHub('env');
+    if (route == '/env/daily') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const EnvDailyScreen()),
+      );
+      return;
+    }
+    if (route == '/env/temuan') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const EnvTemuanScreen()),
+      );
       return;
     }
     if (route == '/bacadoa' || route == '/idnu') {

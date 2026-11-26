@@ -17,12 +17,12 @@ Dokumen ini menjadi acuan resmi migrasi 1:1 dari `ubnetwork` (Next.js Web) ke `u
 | :--- | :--- | :--- | :--- |
 | `/` (Home Hub) | Top Bar macOS, Display & Monitor, 6 Pilar `SQPCEHR`, 5 Kaizen, 11 Quick App | **Selesai (1:1)** | `lib/features/hub/hub_screen.dart` |
 | `/display` (GL Board Hub) | 7 Pilar × 4 Kertas KPI (28 board) | **Shell 1:1** | `lib/features/hub/display_board_screen.dart` |
-| `/productivity` | 14 modul | **14 / 14 Native** | **Selesai 100%** (Checksheet A3, Print, Settings, Monitoring, Chokotei, Manual, CBU, CKD, Roster, Absensi, After-Prod 5S, Task Hub, Shift Template, Kaizen Report) |
+| `/productivity` | 14 modul | **14 / 14 Native** | **Selesai 100%** (semua 14 modul operasional & master selesai) |
 | `/safety` | 8 modul | **6 / 8 Native** | Semua 6 modul operasional Safety selesai (sisa 2 board Display/Slide di Fase 6) |
 | `/quality` | 6 modul | **2 / 6 Native** | Semua modul operasional Quality (`out` & `in`) selesai (sisa 4 Display di Fase 6) |
-| `/cost` | 6 modul | **Shell 1:1** | Target Fase 4 |
+| `/cost` | 6 modul | **2 / 6 Native** | Semua modul operasional Cost (`daily` & `temuan`) selesai (sisa 4 Display di Fase 6) |
+| `/env` | 7 modul | **3 / 7 Native** | Semua modul operasional Env (`air-leakage`, `daily`, `temuan`) selesai (sisa 4 Display di Fase 6) |
 | `/hr` | 9 modul | **Shell 1:1** | Target Fase 5 |
-| `/env` | 7 modul | **Shell 1:1** | Target Fase 4 |
 | Kaizen & Quick App Dx | 5 Kaizen + 11 Quick App + `/monitor` | **Shell 1:1** | Target Fase 7 |
 
 ---
@@ -48,15 +48,15 @@ Dokumen ini menjadi acuan resmi migrasi 1:1 dari `ubnetwork` (Next.js Web) ke `u
 - [x] **2.2** `/quality/daily/in` — Defect In Proses (Red & White terpisah, Grafik D/U, Tabel 1–31, Zero Defect, Temuan CRUD)
 
 ### Fase 3 — Pilar Productivity Lanjutan (`/productivity`) — **SELESAI 14/14 NATIVE**
-- [x] **3.1** `/productivity/monitoring` — Monitoring Produksi & Efisiensi 1–31 (6 KPI Cards, Grafik Tren 1–31, Tabel + Link langsung ke Checksheet A3)
-- [x] **3.2** `/productivity/chokotei` & `/productivity/chokotei-manual` (Pareto 80/20 Mesin, Action Plan PIC + Live Sync, Chokotei Manual CRUD)
-- [x] **3.3** `/productivity/cbu` & `/productivity/ckd` (Monitoring Model CBU & Part CKD Export 1–31, Rasio Komparasi, Live Sync + Offline)
-- [x] **3.4** `/productivity/roster` & `/productivity/absensi` (Struktural Tim GL/TL/TM + Permanen/Kontrak/Vokasi, Matriks Absensi 1–31, Ranking Sering Absen)
-- [x] **3.5** `/productivity/after-prod`, `/productivity/tasks`, `/productivity/shift-template`, `/productivity/kaizen` (UBAI After-Prod 5S Generator + Swap + WA Copy, Task Manager Post-It + Gantt Auto-Urgency, Master Shift Template + Simulasi Takt Time, Kaizen Report Productivity)
+- [x] **3.1** `/productivity/monitoring` — Monitoring Produksi & Efisiensi 1–31
+- [x] **3.2** `/productivity/chokotei` & `/productivity/chokotei-manual`
+- [x] **3.3** `/productivity/cbu` & `/productivity/ckd`
+- [x] **3.4** `/productivity/roster` & `/productivity/absensi`
+- [x] **3.5** `/productivity/after-prod`, `/productivity/tasks`, `/productivity/shift-template`, `/productivity/kaizen`
 
-### Fase 4 — Pilar Cost (`/cost`) & Environment (`/env`)
-- [ ] **4.1** `/cost/daily` & `/cost/temuan`
-- [ ] **4.2** `/env/air-leakage` (`#lub` & `#klub`), `/env/daily` (kWh), `/env/temuan`
+### Fase 4 — Pilar Cost (`/cost`) & Environment (`/env`) — **SELESAI 5/5 OPERASIONAL NATIVE**
+- [x] **4.1** `/cost/daily` & `/cost/temuan` (Control Cost Daily 1–31 Red & White + Pace Projection + Kelola Item, Temuan Cost CRUD + Potensi Loss Rp)
+- [x] **4.2** `/env/air-leakage` (`#lub` & `#klub`), `/env/daily` (kWh Red/White + EVA O/X), `/env/temuan` (Temuan Lingkungan & Kaizen Area E)
 
 ### Fase 5 — Pilar HR & Morale (`/hr`)
 - [ ] **5.1** `/bacadoa` — Jadwal & Matrik Baca Doa Asare 1–31 (+ cetak A4)

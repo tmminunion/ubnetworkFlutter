@@ -3,6 +3,11 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../data/hub_catalog.dart';
 import '../checksheet/checksheet_screen.dart';
+import '../cost/cost_daily_screen.dart';
+import '../cost/cost_temuan_screen.dart';
+import '../env/env_air_leakage_screen.dart';
+import '../env/env_daily_screen.dart';
+import '../env/env_temuan_screen.dart';
 import '../productivity/cbu_monitoring_screen.dart';
 import '../productivity/chokotei_analytics_screen.dart';
 import '../productivity/ckd_monitoring_screen.dart';
@@ -163,6 +168,41 @@ class SubHubScreen extends StatelessWidget {
     if (mod.route == '/productivity/kaizen') {
       Navigator.of(context).push(
         MaterialPageRoute<void>(builder: (_) => const ProdKaizenScreen()),
+      );
+      return;
+    }
+
+    if (mod.route == '/cost/daily') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const CostDailyScreen()),
+      );
+      return;
+    }
+
+    if (mod.route == '/cost/temuan') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const CostTemuanScreen()),
+      );
+      return;
+    }
+
+    if (mod.route == '/env/air-leakage') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const EnvAirLeakageScreen()),
+      );
+      return;
+    }
+
+    if (mod.route == '/env/daily') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const EnvDailyScreen()),
+      );
+      return;
+    }
+
+    if (mod.route == '/env/temuan') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const EnvTemuanScreen()),
       );
       return;
     }
