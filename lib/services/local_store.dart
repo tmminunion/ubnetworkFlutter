@@ -235,4 +235,187 @@ class LocalStore {
       message: anyOk ? 'Terkirim ke Server (${notes.join(' · ')})' : 'Gagal sync (${notes.join(' · ')}) — data aman di lokal',
     );
   }
+
+  /// Ambil laporan checksheet secara ONLINE dari MySQL server (1:1 Ubnetwork Next.js `get_report`).
+  Future<({bool online, bool found, ChecksheetReport? report, String message})> fetchOnlineReport({
+    required String date,
+    required String shift,
+    required String lineName,
+  }) async {
+    final cfg = await getSettings();
+    final base = cfg.serverApiUrl.trim().split('?').first;
+    if (base.isEmpty) {
+      return (online: false, found: false, report: null, message: 'URL Server API belum diatur.');
+    }
+
+    try {
+      final headers = <String, String>{'Accept': 'application/json'};
+      if (cfg.apiKey.trim().isNotEmpty) {
+        headers['x-ub-api-key'] = cfg.apiKey.trim();
+      }
+      final uri = Uri.parse(
+        '$base?action=get_report&date=${Uri.encodeQueryComponent(date)}&shift=${Uri.encodeQueryComponent(shift)}&line=${Uri.encodeQueryComponent(lineName)}',
+      );
+      final res = await http.get(uri, headers: headers).timeout(const Duration(seconds: 12));
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        return (
+          online: false,
+          found: false,
+          report: null,
+          message: 'Server HTTP ${res.statusCode}',
+        );
+      }
+
+      final decoded = jsonDecode(res.body);
+      if (decoded is Map && decoded['status'] == 'success' && decoded['found'] == true && decoded['laporan'] is Map) {
+        final lap = Map<String, dynamic>.from(decoded['laporan'] as Map);
+        final rep = _parseServerLaporan(lap, fallbackDate: date, fallbackShift: shift, cfg: cfg);
+        await saveReport(rep);
+        return (
+          online: true,
+          found: true,
+          report: rep,
+          message: 'Data shift $shift ($date) dimuat dari server',
+        );
+      }
+
+      return (
+        online: true,
+        found: false,
+        report: null,
+        message: 'Belum ada laporan di server untuk $shift ($date)',
+      );
+    } catch (_) {
+      return (
+        online: false,
+        found: false,
+        report: null,
+        message: 'Tidak dapat terhubung ke server (Offline)',
+      );
+    }
+  }
+
+  /// Ambil nomor body finish terakhir secara ONLINE dari `monthly_reports` (1:1 Next.js).
+  Future<({String finish, String label})?> fetchOnlinePrevFinish({
+    required String targetDate,
+    required String targetShift,
+    required String lineName,
+  }) async {
+    final cfg = await getSettings();
+    final base = cfg.serverApiUrl.trim().split('?').first;
+    if (base.isEmpty) return findLatestPrevFinish(targetDate, targetShift, false);
+
+    try {
+      final ym = targetDate.length >= 7 ? targetDate.substring(0, 7) : UbMasterData.wibToday().substring(0, 7);
+      final headers = <String, String>{'Accept': 'application/json'};
+      if (cfg.apiKey.trim().isNotEmpty) {
+        headers['x-ub-api-key'] = cfg.apiKey.trim();
+      }
+      final uri = Uri.parse('$base?action=monthly_reports&year_month=${Uri.encodeQueryComponent(ym)}');
+      final res = await http.get(uri, headers: headers).timeout(const Duration(seconds: 10));
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        return findLatestPrevFinish(targetDate, targetShift, false);
+      }
+
+      final decoded = jsonDecode(res.body);
+      final rawList = (decoded is Map)
+          ? (decoded['data'] is List ? decoded['data'] : (decoded['reports'] is List ? decoded['reports'] : []))
+          : [];
+      final normLine = lineName.trim().toLowerCase();
+      final cands = <Map<String, dynamic>>[];
+
+      for (final item in rawList) {
+        if (item is! Map) continue;
+        final m = Map<String, dynamic>.from(item);
+        final repDate = (m['tanggal'] ?? '').toString().padRight(10).substring(0, 10).trim();
+        final repShift = (m['shift'] ?? '').toString().toUpperCase();
+        final repLine = (m['line_name'] ?? '').toString().trim().toLowerCase();
+        final fin = (m['no_body_finish'] ?? '').toString().trim();
+        if (repDate.isEmpty || fin.replaceAll(RegExp(r'\D'), '').isEmpty) continue;
+        if (normLine.isNotEmpty && repLine.isNotEmpty && repLine != normLine) continue;
+        if (repDate.compareTo(targetDate) < 0 || (repDate == targetDate && repShift != targetShift)) {
+          cands.add(m);
+        }
+      }
+
+      if (cands.isEmpty) return findLatestPrevFinish(targetDate, targetShift, false);
+      cands.sort((a, b) {
+        final da = (a['tanggal'] ?? '').toString();
+        final db = (b['tanggal'] ?? '').toString();
+        final dc = db.compareTo(da);
+        if (dc != 0) return dc;
+        return (b['updated_at'] ?? '').toString().compareTo((a['updated_at'] ?? '').toString());
+      });
+
+      final top = cands.first;
+      final fin = (top['no_body_finish'] ?? '').toString().trim();
+      final sh = (top['shift'] ?? '').toString().toUpperCase();
+      final dt = (top['tanggal'] ?? '').toString();
+      final isNight = (top['template_code'] ?? '').toString().toLowerCase().contains('malam');
+      return (
+        finish: fin,
+        label: '$sh ${isNight ? 'Malam' : 'Siang'} ($dt)',
+      );
+    } catch (_) {
+      return findLatestPrevFinish(targetDate, targetShift, false);
+    }
+  }
+
+  ChecksheetReport _parseServerLaporan(
+    Map<String, dynamic> lap, {
+    required String fallbackDate,
+    required String fallbackShift,
+    required UbSettings cfg,
+  }) {
+    final dt = (lap['tanggal'] ?? fallbackDate).toString().split('T').first;
+    final sh = (lap['shift'] ?? fallbackShift).toString().toUpperCase() == 'RED' ? 'RED' : 'WHITE';
+    final line = (lap['line_name'] ?? cfg.lineName).toString();
+    final tpl = (lap['template_code'] ?? 'pagi_normal').toString();
+    final tt = (lap['takt_time'] as num?)?.toDouble() ?? cfg.taktTime;
+
+    List<T> parseList<T>(dynamic raw, T Function(Map<String, dynamic>) fn) {
+      if (raw is String && raw.trim().isNotEmpty) {
+        try {
+          raw = jsonDecode(raw);
+        } catch (_) {}
+      }
+      if (raw is List) {
+        return raw.whereType<Map>().map((e) => fn(Map<String, dynamic>.from(e))).toList();
+      }
+      return [];
+    }
+
+    final cbu = parseList(lap['models_cbu'], CbuModelItem.fromJson);
+    final ckd = parseList(lap['ckd_parts'], CkdPartItem.fromJson);
+    final mems = parseList(lap['members'], MemberAbsen.fromJson);
+    final slots = parseList(lap['hourly_records'], HourlySlot.fromJson);
+
+    return ChecksheetReport(
+      id: UbMasterData.makeReportId(dt, sh, line),
+      tanggal: dt,
+      shift: sh,
+      session: tpl.toLowerCase().contains('malam') ? 'night' : 'day',
+      workMode: tpl.toLowerCase().contains('puasa') ? 'puasa' : 'normal',
+      templateCode: tpl,
+      overtimeHours: 2,
+      lineName: line,
+      taktTime: tt,
+      ccrPlan: (lap['ccr_plan'] as num?)?.toInt() ?? (sh == 'RED' ? cfg.ccrTargetRed : cfg.ccrTargetWhite),
+      picName: (lap['pic_name'] ?? (sh == 'RED' ? 'KAMALUDIN' : 'DWI MULYONO')).toString(),
+      spvName: (lap['spv_name'] ?? '').toString(),
+      noBodyStart: (lap['no_body_start'] ?? '').toString(),
+      noBodyFinish: (lap['no_body_finish'] ?? '').toString(),
+      jamStopProduksi: (lap['jam_stop_produksi'] ?? '').toString(),
+      actOtHours: (lap['act_ot_hours'] as num?)?.toDouble() ?? 0,
+      actOtUnits: (lap['act_ot_units'] as num?)?.toInt() ?? 0,
+      cbuSource: (lap['model_cbu_source'] ?? 'ratio').toString(),
+      cbuModels: cbu.isEmpty ? UbMasterData.defaultCbuModels() : cbu,
+      ckdParts: ckd.isEmpty ? UbMasterData.defaultCkdParts() : ckd,
+      members: mems.isEmpty ? UbMasterData.defaultMembers(sh) : mems,
+      slots: slots.isEmpty ? UbMasterData.buildSlotsFromTemplate(tpl, tt, 2) : slots,
+      syncStatus: 'synced',
+      updatedAt: (lap['updated_at'] ?? DateTime.now().toIso8601String()).toString(),
+      lastSyncedAt: (lap['updated_at'] ?? DateTime.now().toIso8601String()).toString(),
+    );
+  }
 }

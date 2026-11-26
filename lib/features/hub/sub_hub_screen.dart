@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../data/hub_catalog.dart';
 import '../checksheet/checksheet_screen.dart';
+import '../productivity/cbu_monitoring_screen.dart';
 import '../productivity/chokotei_analytics_screen.dart';
+import '../productivity/ckd_monitoring_screen.dart';
 import '../productivity/chokotei_manual_screen.dart';
 import '../productivity/prod_monitoring_screen.dart';
 import '../quality/quality_daily_screen.dart';
@@ -85,6 +87,20 @@ class SubHubScreen extends StatelessWidget {
     if (mod.route == '/safety/temuan') {
       Navigator.of(context).push(
         MaterialPageRoute<void>(builder: (_) => const SafetyTemuanScreen()),
+      );
+      return;
+    }
+
+    if (mod.route == '/productivity/cbu') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const CbuMonitoringScreen()),
+      );
+      return;
+    }
+
+    if (mod.route == '/productivity/ckd') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const CkdMonitoringScreen()),
       );
       return;
     }

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme.dart';
 import '../../data/hub_catalog.dart';
 import '../../models/checksheet_models.dart';
+import '../../services/auth_service.dart';
 import '../../services/local_store.dart';
 import '../checksheet/checksheet_screen.dart';
 import 'display_board_screen.dart';
@@ -12,7 +13,14 @@ import '../safety/sga_group_screen.dart';
 import 'sub_hub_screen.dart';
 
 class HubScreen extends StatefulWidget {
-  const HubScreen({super.key});
+  const HubScreen({
+    super.key,
+    this.authUser,
+    this.onLogout,
+  });
+
+  final UbAuthUser? authUser;
+  final VoidCallback? onLogout;
 
   @override
   State<HubScreen> createState() => _HubScreenState();
