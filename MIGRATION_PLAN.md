@@ -68,5 +68,5 @@ Dokumen ini menjadi acuan resmi migrasi 1:1 dari `ubnetwork` (Next.js Web) ke `u
 - [ ] **6.2** `/monitor` — Slide Show TV Shopfloor
 
 ### Fase 7 — Quick App Dx & Aktivitas Kaizen
-- [ ] **7.1** Henkaten Board, Post-It Board, UBdrive, Andon Live Monitor, Dokumentasi
+- [x] **7.1** Henkaten Board, Post-It Board, UBdrive, Dokumentasi *(Andon dihapus dari Hub)*
 - [ ] **7.2** QCC, TPM, 5R / 5S, SW Observasi

@@ -8,6 +8,10 @@ import '../../models/checksheet_models.dart';
 import '../../services/auth_service.dart';
 import '../../services/local_store.dart';
 import '../checksheet/checksheet_screen.dart';
+import '../quick/docs_screen.dart';
+import '../quick/henkaten_board_screen.dart';
+import '../quick/postit_board_screen.dart';
+import '../quick/ubdrive_screen.dart';
 import 'display_board_screen.dart';
 import '../safety/sga_group_screen.dart';
 import 'sub_hub_screen.dart';
@@ -112,6 +116,30 @@ class _HubScreenState extends State<HubScreen> {
     if (route == '/safety/group') {
       Navigator.of(context).push(
         MaterialPageRoute<void>(builder: (_) => const SgaGroupScreen()),
+      );
+      return;
+    }
+    if (route == '/henkaten') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const HenkatenBoardScreen()),
+      );
+      return;
+    }
+    if (route == '/postit') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const PostitBoardScreen()),
+      );
+      return;
+    }
+    if (route == '/ubdrive') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const UbdriveScreen()),
+      );
+      return;
+    }
+    if (route == '/docs') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const DocsScreen()),
       );
       return;
     }
