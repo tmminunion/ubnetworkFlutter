@@ -32,7 +32,7 @@ on:
         default: 'Pembaruan fitur Record Daily Control, kanvas lembar kerja digital interaktif, manajemen aktivitas harian, sinkronisasi cloud, serta peningkatan performa aplikasi.'
 
 concurrency:
-  group: build-ubnetwork-flutter-apk
+  group: build-ubnetwork-flutter-apk-${{ github.event_name }}
   cancel-in-progress: true
 
 permissions:

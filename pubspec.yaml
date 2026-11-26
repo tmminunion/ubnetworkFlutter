@@ -1,7 +1,7 @@
 name: ubnetwork_flutter
 description: "UBnetwork — Record Daily Control, Interactive Digital Worksheet & Daily Activity Hub."
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.1+1
 
 environment:
   sdk: '>=3.4.0 <4.0.0'
