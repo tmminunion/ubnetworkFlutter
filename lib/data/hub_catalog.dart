@@ -479,10 +479,11 @@ class HubCatalog {
           title: 'KYT Monitoring (12 Bulan)',
           desc: 'Matriks pemantauan pelaksanaan target 1 bulan 1 KYT per group SGA (Shift Red & White) periode 12 bulan.',
           route: '/kyt/monitoring',
-          badge: '1 Bulan 1 KYT',
+          badge: 'NATIVE READY',
           gradient: [Color(0xFFF59E0B), Color(0xFFEA580C)],
           accentColor: Color(0xFFFBBF24),
           icon: Icons.warning_amber_rounded,
+          isNativeReady: true,
         ),
         SubModuleItem(
           id: 'temuan',
