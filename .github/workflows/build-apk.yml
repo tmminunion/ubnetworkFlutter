@@ -1,0 +1,85 @@
+name: Build UBnetwork Flutter Android APK
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: build-ubnetwork-flutter-apk
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  build-apk:
+    name: Analyze, Test & Build UBnetwork Release APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Flutter (Stable)
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Read Version Metadata
+        id: meta
+        run: |
+          VER_RAW=$(grep '^version:' pubspec.yaml | awk '{print $2}')
+          VER_NAME=${VER_RAW%%+*}
+          BASE_CODE=${VER_RAW##*+}
+          VER_CODE=$((BASE_CODE + GITHUB_RUN_NUMBER))
+          echo "version_name=${VER_NAME}" >> "$GITHUB_OUTPUT"
+          echo "version_code=${VER_CODE}" >> "$GITHUB_OUTPUT"
+
+      - name: Bootstrap Android Project
+        run: |
+          rm -rf android /tmp/ubnet_tpl
+          flutter create /tmp/ubnet_tpl --project-name ubnetwork_flutter --org com.tmmin.ub --platforms=android
+          cp -r /tmp/ubnet_tpl/android ./android
+          rm -rf /tmp/ubnet_tpl
+
+          python3 - <<'PYEOF'
+          import re
+
+          mpath = "android/app/src/main/AndroidManifest.xml"
+          m = open(mpath, "r", encoding="utf-8").read()
+          if "android.permission.INTERNET" not in m:
+              m = m.replace("<application", '<uses-permission android:name="android.permission.INTERNET"/>\n    <application', 1)
+          m = re.sub(r'android:label="[^"]*"', 'android:label="UBnetwork"', m)
+          open(mpath, "w", encoding="utf-8").write(m)
+          PYEOF
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Static Analysis
+        run: flutter analyze
+
+      - name: Run Unit Tests
+        run: flutter test
+
+      - name: Build Release APK
+        run: |
+          flutter build apk --release \
+            --build-name="${{ steps.meta.outputs.version_name }}" \
+            --build-number="${{ steps.meta.outputs.version_code }}"
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: UBnetwork-v${{ steps.meta.outputs.version_name }}-code${{ steps.meta.outputs.version_code }}-release
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30
