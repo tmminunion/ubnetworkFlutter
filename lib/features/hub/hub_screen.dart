@@ -16,6 +16,7 @@ import '../quick/docs_screen.dart';
 import '../quick/henkaten_board_screen.dart';
 import '../quick/postit_board_screen.dart';
 import '../quick/ubdrive_screen.dart';
+import '../monitor/monitor_tv_screen.dart';
 import 'display_board_screen.dart';
 import '../productivity/after_prod_screen.dart';
 import '../productivity/task_hub_screen.dart';
@@ -912,12 +913,8 @@ class _HubScreenState extends State<HubScreen> {
       badge: 'Shopfloor TV',
       icon: Icons.slideshow_rounded,
       gradient: const [Color(0xFF059669), Color(0xFF0891B2)],
-      onTap: () => _showRoutePreview(
-        title: 'Monitor Display',
-        subtitle: 'Slide Show TV Shopfloor & Safety Patrol',
-        route: '/monitor',
-        icon: Icons.slideshow_rounded,
-        color: UbColors.emerald,
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const MonitorTvScreen()),
       ),
     );
 

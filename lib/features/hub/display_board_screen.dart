@@ -2,112 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme.dart';
 import '../../data/hub_catalog.dart';
+import '../display/display_paper_screen.dart';
 
 class DisplayBoardScreen extends StatelessWidget {
   const DisplayBoardScreen({super.key});
-
-  void _showPaperInfo(BuildContext context, DisplayPillarItem pillar, DisplayRowMeta row) {
-    final route = '/display/${pillar.slug}/${row.key}';
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: UbColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.white24,
-                  borderRadius: BorderRadius.circular(99),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(colors: pillar.gradient),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Icon(row.icon, color: Colors.white, size: 22),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '${row.name} — ${pillar.shortName}',
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: Colors.white),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '${pillar.fullName} · ${row.desc}',
-                        style: const TextStyle(fontSize: 12, color: UbColors.textMuted),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: UbColors.bg,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.white12),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'ROUTE: $route',
-                    style: TextStyle(
-                      fontFamily: 'monospace',
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: pillar.accentColor,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  const Text(
-                    'Kertas Display KPI 16:9 / A4 untuk papan GL Management Board ini sedang disiapkan ke mode native Flutter.',
-                    style: TextStyle(fontSize: 12.5, color: UbColors.textMuted, height: 1.4),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                style: FilledButton.styleFrom(
-                  backgroundColor: pillar.gradient.first,
-                  foregroundColor: UbColors.bg,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Tutup', style: TextStyle(fontWeight: FontWeight.w900)),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -206,7 +104,11 @@ class DisplayBoardScreen extends StatelessWidget {
                         return _DisplayPillarCard(
                           pillar: pillar,
                           orderIndex: index + 1,
-                          onSelectRow: (row) => _showPaperInfo(context, pillar, row),
+                          onSelectRow: (row) => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => DisplayPaperScreen(pillar: pillar, initialRowKey: row.key),
+                            ),
+                          ),
                         );
                       },
                       childCount: HubCatalog.displayPillars.length,
