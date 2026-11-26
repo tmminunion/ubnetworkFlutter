@@ -427,7 +427,7 @@ class ProductivityOpsStore {
       } catch (_) {}
     }
 
-    final ym = UbMasterData.todayYmd().substring(0, 7);
+    final ym = ubTodayYmd().substring(0, 7);
     final seed = [
       ProdKaizenItem(
         id: 'kz_1',

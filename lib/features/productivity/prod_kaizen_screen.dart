@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../core/theme.dart';
-import '../../models/checksheet_models.dart';
 import '../../models/productivity_ops_models.dart';
 import '../../services/local_store.dart';
 import '../../services/productivity_ops_store.dart';
@@ -36,7 +35,7 @@ class _ProdKaizenScreenState extends State<ProdKaizenScreen> with SingleTickerPr
   List<ProdKaizenItem> _items = const [];
   List<_SolvedChokoteiCandidate> _solvedChokotei = const [];
   bool _loading = true;
-  String _selectedMonth = UbMasterData.todayYmd().substring(0, 7);
+  String _selectedMonth = ubTodayYmd().substring(0, 7);
   bool _allMonths = false;
   String _statusFilter = 'ALL'; // ALL | SUDAH | ON PROGRES | BELUM
 
@@ -59,18 +58,23 @@ class _ProdKaizenScreenState extends State<ProdKaizenScreen> with SingleTickerPr
     final reports = await LocalStore.instance.listReports();
     final solved = <_SolvedChokoteiCandidate>[];
     for (final r in reports) {
-      for (final d in r.delays) {
-        if (d.problem.trim().isEmpty) continue;
-        solved.add(
-          _SolvedChokoteiCandidate(
-            key: '${r.tanggal}_${r.shift}_${d.machine}_${d.problem.hashCode}',
-            date: r.tanggal,
-            shift: r.shift,
-            machine: d.machine.isEmpty ? 'UB Assy' : d.machine,
-            problem: d.problem,
-            durationMin: d.duration.round(),
-          ),
-        );
+      for (final s in r.slots) {
+        for (final d in s.problems) {
+          if (d.problem.trim().isEmpty) continue;
+          final machine = d.machineName.isNotEmpty
+              ? d.machineName
+              : (d.lineStation.isNotEmpty ? d.lineStation : 'UB Assy');
+          solved.add(
+            _SolvedChokoteiCandidate(
+              key: '${r.tanggal}_${r.shift}_${machine}_${d.problem.hashCode}',
+              date: r.tanggal,
+              shift: r.shift,
+              machine: machine,
+              problem: d.problem,
+              durationMin: d.delayMin.round(),
+            ),
+          );
+        }
       }
     }
     if (!mounted) return;

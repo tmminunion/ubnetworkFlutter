@@ -1,5 +1,11 @@
 import 'dart:math';
 
+String ubTodayYmd() {
+  final wib = DateTime.now().toUtc().add(const Duration(hours: 7));
+  return '${wib.year}-${wib.month.toString().padLeft(2, '0')}-${wib.day.toString().padLeft(2, '0')}';
+}
+
+
 // =============================================================================
 // 1. UBAI AFTER-PROD 5S MODELS & ENGINE
 // =============================================================================

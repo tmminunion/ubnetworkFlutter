@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/theme.dart';
-import '../../models/checksheet_models.dart';
 import '../../models/productivity_ops_models.dart';
 import '../../services/productivity_ops_store.dart';
 
@@ -49,7 +48,7 @@ class _AfterProdScreenState extends State<AfterProdScreen> with SingleTickerProv
       _jobs = jobRes.jobs;
       _history = hist;
       _fromServer = memRes.fromServer || jobRes.fromServer;
-      _assignments = hist.isNotEmpty && hist.first.date == UbMasterData.todayYmd()
+      _assignments = hist.isNotEmpty && hist.first.date == ubTodayYmd()
           ? hist.first.assignments
           : const [];
       _loading = false;
@@ -71,7 +70,7 @@ class _AfterProdScreenState extends State<AfterProdScreen> with SingleTickerProv
   Future<void> _saveCurrentAssignments() async {
     if (_assignments.isEmpty) return;
     final rec = AfterProdHistoryRecord(
-      date: UbMasterData.todayYmd(),
+      date: ubTodayYmd(),
       shift: _shift,
       jamPulang: _jamPulang,
       presentCount: _presentCount,
@@ -88,7 +87,7 @@ class _AfterProdScreenState extends State<AfterProdScreen> with SingleTickerProv
   void _copyWhatsapp() {
     if (_assignments.isEmpty) return;
     final text = AfterProdEngine.buildWhatsappText(
-      date: UbMasterData.todayYmd(),
+      date: ubTodayYmd(),
       shift: _shift,
       jamPulang: _jamPulang,
       assignments: _assignments,
