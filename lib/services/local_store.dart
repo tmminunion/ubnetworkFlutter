@@ -299,7 +299,11 @@ class LocalStore {
         final res = await http
             .post(
               Uri.parse(cfg.sharepointSyncUrl.trim()),
-              headers: const {'Content-Type': 'application/json', 'Accept': 'application/json'},
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                if (cfg.apiKey.trim().isNotEmpty) 'x-ub-api-key': cfg.apiKey.trim(),
+              },
               body: jsonEncode(spPayload),
             )
             .timeout(const Duration(seconds: 12));
