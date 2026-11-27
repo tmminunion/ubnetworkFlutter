@@ -1,10 +1,9 @@
 import 'dart:convert';
 
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/kaizen_activity_models.dart';
-import 'auth_service.dart';
+import 'ub_web_api.dart';
 
 class KaizenActivityStore {
   KaizenActivityStore._();
@@ -17,19 +16,8 @@ class KaizenActivityStore {
   static const String _kSwElementsPrefix = 'ubf_sw_elements_v1_';
   static const String _kSwObsPrefix = 'ubf_sw_obs_v1_';
 
-  Future<Map<String, String>> _headers({bool jsonBody = false}) async {
-    final h = <String, String>{'Accept': 'application/json'};
-    if (jsonBody) h['Content-Type'] = 'application/json';
-    final prefs = await SharedPreferences.getInstance();
-    final cookie = prefs.getString('ubf_gate_cookie_v1') ?? '';
-    if (cookie.isNotEmpty) {
-      h['Cookie'] = cookie.split(';').first;
-    }
-    return h;
-  }
-
   // =========================================================================
-  // 1. QCC STORE (Online /api/qcc + Offline Cache)
+  // 1. QCC STORE (Online /api/qcc + Offline Cache via UbWebApi)
   // =========================================================================
   Future<({List<QccCircle> circles, QccCircle activeCircle, QccA3Report report, bool online})> loadQcc(
     String circleId,
@@ -40,28 +28,20 @@ class KaizenActivityStore {
       orElse: () => defaultCircles.first,
     );
 
-    try {
-      final uri = Uri.parse(
-        '${AuthService.gateBaseUrl}/api/qcc?circleId=${Uri.encodeQueryComponent(circleId)}',
-      );
-      final res = await http.get(uri, headers: await _headers()).timeout(const Duration(seconds: 10));
-      if (res.statusCode >= 200 && res.statusCode < 300) {
-        final decoded = jsonDecode(res.body);
-        if (decoded is Map && decoded['success'] == true && decoded['report'] is Map) {
-          final circles = (decoded['circles'] as List?)
-                  ?.whereType<Map>()
-                  .map((e) => QccCircle.fromJson(Map<String, dynamic>.from(e)))
-                  .toList() ??
-              defaultCircles;
-          final activeId = (decoded['activeCircleId'] ?? circleId).toString();
-          final active = circles.firstWhere((c) => c.id == activeId, orElse: () => fallbackCircle);
-          final rep = QccA3Report.fromJson(Map<String, dynamic>.from(decoded['report'] as Map));
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setString('$_kQccPrefix${active.id}', jsonEncode(rep.toJson()));
-          return (circles: circles, activeCircle: active, report: rep, online: true);
-        }
-      }
-    } catch (_) {}
+    final res = await UbWebApi.instance.getJson('/api/qcc', query: {'circleId': circleId});
+    if (res.ok && res.map['success'] == true && res.map['report'] is Map) {
+      final circles = (res.map['circles'] as List?)
+              ?.whereType<Map>()
+              .map((e) => QccCircle.fromJson(Map<String, dynamic>.from(e)))
+              .toList() ??
+          defaultCircles;
+      final activeId = (res.map['activeCircleId'] ?? circleId).toString();
+      final active = circles.firstWhere((c) => c.id == activeId, orElse: () => fallbackCircle);
+      final rep = QccA3Report.fromJson(Map<String, dynamic>.from(res.map['report'] as Map));
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('$_kQccPrefix${active.id}', jsonEncode(rep.toJson()));
+      return (circles: circles, activeCircle: active, report: rep, online: true);
+    }
 
     final prefs = await SharedPreferences.getInstance();
     final cached = prefs.getString('$_kQccPrefix${fallbackCircle.id}');
@@ -94,55 +74,45 @@ class KaizenActivityStore {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('$_kQccPrefix${report.circleId}', jsonEncode(report.toJson()));
 
-    try {
-      Map<String, dynamic> body;
-      if (savedPlan != null) {
-        body = {
-          'action': 'saveActionPlan',
-          'circleId': report.circleId,
-          'payload': savedPlan.toJson(),
-        };
-      } else if (deletedPlanId != null) {
-        body = {
-          'action': 'deleteActionPlan',
-          'circleId': report.circleId,
-          'payload': {'actionId': deletedPlanId},
-        };
-      } else if (stepNumber != null) {
-        final full = report.toJson();
-        body = {
-          'action': 'updateStep',
-          'circleId': report.circleId,
-          'payload': {
-            'stepNumber': stepNumber,
-            'stepData': full['step$stepNumber'],
-          },
-        };
-      } else {
-        body = {
-          'action': 'updateReportMeta',
-          'circleId': report.circleId,
-          'payload': {
-            'title': report.title,
-            'kpiCategory': report.kpiCategory,
-            'currentStep': report.currentStep,
-            'status': report.status,
-            'conventionDate': report.conventionDate,
-          },
-        };
-      }
-
-      final res = await http
-          .post(
-            Uri.parse('${AuthService.gateBaseUrl}/api/qcc'),
-            headers: await _headers(jsonBody: true),
-            body: jsonEncode(body),
-          )
-          .timeout(const Duration(seconds: 10));
-      return res.statusCode >= 200 && res.statusCode < 300;
-    } catch (_) {
-      return false;
+    Map<String, dynamic> body;
+    if (savedPlan != null) {
+      body = {
+        'action': 'saveActionPlan',
+        'circleId': report.circleId,
+        'payload': savedPlan.toJson(),
+      };
+    } else if (deletedPlanId != null) {
+      body = {
+        'action': 'deleteActionPlan',
+        'circleId': report.circleId,
+        'payload': {'actionId': deletedPlanId},
+      };
+    } else if (stepNumber != null) {
+      final full = report.toJson();
+      body = {
+        'action': 'updateStep',
+        'circleId': report.circleId,
+        'payload': {
+          'stepNumber': stepNumber,
+          'stepData': full['step$stepNumber'],
+        },
+      };
+    } else {
+      body = {
+        'action': 'updateReportMeta',
+        'circleId': report.circleId,
+        'payload': {
+          'title': report.title,
+          'kpiCategory': report.kpiCategory,
+          'currentStep': report.currentStep,
+          'status': report.status,
+          'conventionDate': report.conventionDate,
+        },
+      };
     }
+
+    final res = await UbWebApi.instance.postJson('/api/qcc', body);
+    return res.ok;
   }
 
   // =========================================================================
@@ -186,33 +156,26 @@ class KaizenActivityStore {
   }
 
   // =========================================================================
-  // 3. 5R / 5S STORE (Online /api/5r + Offline Cache)
+  // 3. 5R / 5S STORE (Online /api/5r + Offline Cache via UbWebApi)
   // =========================================================================
   Future<({FiveRAuditMaster audit, List<FiveRRedTag> redTags, List<FiveRShadowBoardTool> shadowBoard, bool online})> load5R() async {
-    try {
-      final res = await http
-          .get(Uri.parse('${AuthService.gateBaseUrl}/api/5r'), headers: await _headers())
-          .timeout(const Duration(seconds: 10));
-      if (res.statusCode >= 200 && res.statusCode < 300) {
-        final decoded = jsonDecode(res.body);
-        if (decoded is Map && decoded['success'] == true && decoded['audit'] is Map) {
-          final audit = FiveRAuditMaster.fromJson(Map<String, dynamic>.from(decoded['audit'] as Map));
-          final tags = (decoded['redTags'] as List?)
-                  ?.whereType<Map>()
-                  .map((e) => FiveRRedTag.fromJson(Map<String, dynamic>.from(e)))
-                  .toList() ??
-              KaizenActivitySeeds.fiveRRedTags();
-          final tools = (decoded['shadowBoard'] as List?)
-                  ?.whereType<Map>()
-                  .map((e) => FiveRShadowBoardTool.fromJson(Map<String, dynamic>.from(e)))
-                  .toList() ??
-              KaizenActivitySeeds.fiveRShadowBoard();
-          audit.recalculate(tags);
-          await _cache5R(audit, tags, tools);
-          return (audit: audit, redTags: tags, shadowBoard: tools, online: true);
-        }
-      }
-    } catch (_) {}
+    final res = await UbWebApi.instance.getJson('/api/5r');
+    if (res.ok && res.map['success'] == true && res.map['audit'] is Map) {
+      final audit = FiveRAuditMaster.fromJson(Map<String, dynamic>.from(res.map['audit'] as Map));
+      final tags = (res.map['redTags'] as List?)
+              ?.whereType<Map>()
+              .map((e) => FiveRRedTag.fromJson(Map<String, dynamic>.from(e)))
+              .toList() ??
+          KaizenActivitySeeds.fiveRRedTags();
+      final tools = (res.map['shadowBoard'] as List?)
+              ?.whereType<Map>()
+              .map((e) => FiveRShadowBoardTool.fromJson(Map<String, dynamic>.from(e)))
+              .toList() ??
+          KaizenActivitySeeds.fiveRShadowBoard();
+      audit.recalculate(tags);
+      await _cache5R(audit, tags, tools);
+      return (audit: audit, redTags: tags, shadowBoard: tools, online: true);
+    }
 
     final prefs = await SharedPreferences.getInstance();
     final cached = prefs.getString(_k5RBundle);
@@ -265,22 +228,12 @@ class KaizenActivityStore {
   }) async {
     audit.recalculate(redTags);
     await _cache5R(audit, redTags, shadowBoard);
-    try {
-      final res = await http
-          .post(
-            Uri.parse('${AuthService.gateBaseUrl}/api/5r'),
-            headers: await _headers(jsonBody: true),
-            body: jsonEncode({'action': action, 'payload': payload}),
-          )
-          .timeout(const Duration(seconds: 10));
-      return res.statusCode >= 200 && res.statusCode < 300;
-    } catch (_) {
-      return false;
-    }
+    final res = await UbWebApi.instance.postJson('/api/5r', {'action': action, 'payload': payload});
+    return res.ok;
   }
 
   // =========================================================================
-  // 4. SW OBSERVASI STORE (Online /api/sw-observasi + Offline Cache)
+  // 4. SW OBSERVASI STORE (Online /api/sw-observasi + Offline Cache via UbWebApi)
   // =========================================================================
   Future<({
     List<SwProfile> profiles,
@@ -302,59 +255,57 @@ class KaizenActivityStore {
       orElse: () => defJobs.first,
     );
 
-    try {
-      final uri = Uri.parse(
-        '${AuthService.gateBaseUrl}/api/sw-observasi?profileId=${Uri.encodeQueryComponent(defProf.id)}&jobId=${Uri.encodeQueryComponent(defJob.id)}',
+    final res = await UbWebApi.instance.getJson(
+      '/api/sw-observasi',
+      query: {
+        'profileId': defProf.id,
+        'jobId': defJob.id,
+      },
+    );
+    if (res.ok && res.map['success'] == true) {
+      final profiles = (res.map['profiles'] as List?)
+              ?.whereType<Map>()
+              .map((e) => SwProfile.fromJson(Map<String, dynamic>.from(e)))
+              .toList() ??
+          defProfiles;
+      final jobs = (res.map['jobs'] as List?)
+              ?.whereType<Map>()
+              .map((e) => SwJob.fromJson(Map<String, dynamic>.from(e)))
+              .toList() ??
+          defJobs;
+      final actJobId = (res.map['activeJobId'] ?? defJob.id).toString();
+      final actJob = jobs.firstWhere((j) => j.id == actJobId, orElse: () => defJob);
+      final elements = (res.map['elements'] as List?)
+              ?.whereType<Map>()
+              .map((e) => SwElement.fromJson(Map<String, dynamic>.from(e)))
+              .toList() ??
+          KaizenActivitySeeds.swElementsForJob(actJob);
+      final obs = (res.map['observations'] as List?)
+              ?.whereType<Map>()
+              .map((e) => SwObservation.fromJson(Map<String, dynamic>.from(e)))
+              .toList() ??
+          KaizenActivitySeeds.swObservationsForJob(actJob);
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        '$_kSwElementsPrefix${actJob.id}',
+        jsonEncode(elements.map((e) => e.toJson()).toList()),
       );
-      final res = await http.get(uri, headers: await _headers()).timeout(const Duration(seconds: 10));
-      if (res.statusCode >= 200 && res.statusCode < 300) {
-        final decoded = jsonDecode(res.body);
-        if (decoded is Map && decoded['success'] == true) {
-          final profiles = (decoded['profiles'] as List?)
-                  ?.whereType<Map>()
-                  .map((e) => SwProfile.fromJson(Map<String, dynamic>.from(e)))
-                  .toList() ??
-              defProfiles;
-          final jobs = (decoded['jobs'] as List?)
-                  ?.whereType<Map>()
-                  .map((e) => SwJob.fromJson(Map<String, dynamic>.from(e)))
-                  .toList() ??
-              defJobs;
-          final actJobId = (decoded['activeJobId'] ?? defJob.id).toString();
-          final actJob = jobs.firstWhere((j) => j.id == actJobId, orElse: () => defJob);
-          final elements = (decoded['elements'] as List?)
-                  ?.whereType<Map>()
-                  .map((e) => SwElement.fromJson(Map<String, dynamic>.from(e)))
-                  .toList() ??
-              KaizenActivitySeeds.swElementsForJob(actJob);
-          final obs = (decoded['observations'] as List?)
-                  ?.whereType<Map>()
-                  .map((e) => SwObservation.fromJson(Map<String, dynamic>.from(e)))
-                  .toList() ??
-              KaizenActivitySeeds.swObservationsForJob(actJob);
+      await prefs.setString(
+        '$_kSwObsPrefix${actJob.id}',
+        jsonEncode(obs.map((o) => o.toJson()).toList()),
+      );
 
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setString(
-            '$_kSwElementsPrefix${actJob.id}',
-            jsonEncode(elements.map((e) => e.toJson()).toList()),
-          );
-          await prefs.setString(
-            '$_kSwObsPrefix${actJob.id}',
-            jsonEncode(obs.map((o) => o.toJson()).toList()),
-          );
-
-          return (
-            profiles: profiles,
-            activeProfile: profiles.firstWhere((p) => p.id == defProf.id, orElse: () => defProf),
-            jobs: jobs,
-            activeJob: actJob,
-            elements: elements,
-            observations: obs,
-            online: true,
-          );
-        }
-      }
-    } catch (_) {}
+      return (
+        profiles: profiles,
+        activeProfile: profiles.firstWhere((p) => p.id == defProf.id, orElse: () => defProf),
+        jobs: jobs,
+        activeJob: actJob,
+        elements: elements,
+        observations: obs,
+        online: true,
+      );
+    }
 
     final prefs = await SharedPreferences.getInstance();
     var elements = KaizenActivitySeeds.swElementsForJob(defJob);
@@ -403,27 +354,17 @@ class KaizenActivityStore {
       jsonEncode(elements.map((e) => e.toJson()).toList()),
     );
 
-    try {
-      final body = deletedId != null
-          ? {
-              'action': 'deleteElement',
-              'payload': {'id': deletedId},
-            }
-          : {
-              'action': 'saveElement',
-              'payload': upserted?.toJson() ?? {},
-            };
-      final res = await http
-          .post(
-            Uri.parse('${AuthService.gateBaseUrl}/api/sw-observasi'),
-            headers: await _headers(jsonBody: true),
-            body: jsonEncode(body),
-          )
-          .timeout(const Duration(seconds: 10));
-      return res.statusCode >= 200 && res.statusCode < 300;
-    } catch (_) {
-      return false;
-    }
+    final body = deletedId != null
+        ? {
+            'action': 'deleteElement',
+            'payload': {'id': deletedId},
+          }
+        : {
+            'action': 'saveElement',
+            'payload': upserted?.toJson() ?? {},
+          };
+    final res = await UbWebApi.instance.postJson('/api/sw-observasi', body);
+    return res.ok;
   }
 
   Future<bool> saveSwObservation({
@@ -437,20 +378,10 @@ class KaizenActivityStore {
       jsonEncode(observations.map((o) => o.toJson()).toList()),
     );
 
-    try {
-      final res = await http
-          .post(
-            Uri.parse('${AuthService.gateBaseUrl}/api/sw-observasi'),
-            headers: await _headers(jsonBody: true),
-            body: jsonEncode({
-              'action': 'saveObservation',
-              'payload': updated.toJson(),
-            }),
-          )
-          .timeout(const Duration(seconds: 10));
-      return res.statusCode >= 200 && res.statusCode < 300;
-    } catch (_) {
-      return false;
-    }
+    final res = await UbWebApi.instance.postJson('/api/sw-observasi', {
+      'action': 'saveObservation',
+      'payload': updated.toJson(),
+    });
+    return res.ok;
   }
 }

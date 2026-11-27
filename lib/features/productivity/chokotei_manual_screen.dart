@@ -27,17 +27,12 @@ class _ChokoteiManualScreenState extends State<ChokoteiManualScreen> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final items = await ChokoteiStore.instance.listManual(_ym);
+    final res = await ChokoteiStore.instance.fetchManual(_ym);
     if (!mounted) return;
     setState(() {
-      _items = items;
+      _items = res.items;
       _loading = false;
     });
-  }
-
-  Future<void> _saveList(List<ChokoteiIssue> next) async {
-    await ChokoteiStore.instance.saveManualList(_ym, next);
-    setState(() => _items = next);
   }
 
   Future<void> _openForm({ChokoteiIssue? existing}) async {
@@ -149,11 +144,11 @@ class _ChokoteiManualScreenState extends State<ChokoteiManualScreen> {
       );
 
       if (act == 'delete' && existing != null) {
-        final next = _items.where((e) => e.id != existing.id).toList();
-        await _saveList(next);
+        await ChokoteiStore.instance.deleteManual(_ym, existing.id);
+        await _load();
       } else if (act == 'save') {
         final item = ChokoteiIssue(
-          id: existing?.id ?? 'CM-${_items.length + 1}',
+          id: existing?.id ?? 'CM-${DateTime.now().millisecondsSinceEpoch}',
           tanggal: tglCtrl.text.trim(),
           shift: shift,
           machine: machCtrl.text.trim().isEmpty ? 'UB ASSY' : machCtrl.text.trim(),
@@ -165,14 +160,8 @@ class _ChokoteiManualScreenState extends State<ChokoteiManualScreen> {
           actionStatus: status,
           isManual: true,
         );
-        final next = List<ChokoteiIssue>.from(_items);
-        final idx = next.indexWhere((e) => e.id == item.id);
-        if (idx >= 0) {
-          next[idx] = item;
-        } else {
-          next.insert(0, item);
-        }
-        await _saveList(next);
+        await ChokoteiStore.instance.upsertManual(_ym, item);
+        await _load();
       }
     } finally {
       tglCtrl.dispose();

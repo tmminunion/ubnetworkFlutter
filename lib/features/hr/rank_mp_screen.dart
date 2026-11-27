@@ -13,7 +13,7 @@ class RankMpScreen extends StatefulWidget {
 
 class _RankMpScreenState extends State<RankMpScreen> with SingleTickerProviderStateMixin {
   late final TabController _tabCtrl;
-  final String _ym = hrTodayYmd().substring(0, 7);
+  String _ym = hrTodayYmd().substring(0, 7);
   String _shift = 'RED';
   String _search = '';
   String _tierFilter = 'ALL';
@@ -34,21 +34,20 @@ class _RankMpScreenState extends State<RankMpScreen> with SingleTickerProviderSt
     super.dispose();
   }
 
+  void _shiftMonth(int delta) {
+    final p = _ym.split('-');
+    final d = DateTime(int.parse(p[0]), int.parse(p[1]) + delta, 1);
+    setState(() => _ym = '${d.year}-${d.month.toString().padLeft(2, '0')}');
+    _load();
+  }
+
   Future<void> _load() async {
     setState(() => _loading = true);
-    final ops = HrMoraleStore.instance.operatorsForShift(_shift);
-    final baca = await HrMoraleStore.instance.loadBacaDoa(_ym, _shift);
-    final evals = await HrMoraleStore.instance.loadRankEvals(_ym, _shift);
-    final ranked = RankMpEngine.computeRankings(
-      shift: _shift,
-      operators: ops,
-      bacaDoaRecords: baca,
-      customEvals: evals,
-    );
+    final res = await HrMoraleStore.instance.fetchRankMpData(_ym, _shift);
     if (!mounted) return;
     setState(() {
-      _evals = evals;
-      _rows = ranked;
+      _evals = res.evals;
+      _rows = res.rows;
       _loading = false;
     });
   }
@@ -135,6 +134,18 @@ class _RankMpScreenState extends State<RankMpScreen> with SingleTickerProviderSt
           ],
         ),
         actions: [
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            onPressed: () => _shiftMonth(-1),
+            icon: const Icon(Icons.chevron_left_rounded),
+            tooltip: 'Bulan Sebelumnya',
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            onPressed: () => _shiftMonth(1),
+            icon: const Icon(Icons.chevron_right_rounded),
+            tooltip: 'Bulan Berikutnya',
+          ),
           SegmentedButton<String>(
             segments: const [
               ButtonSegment(value: 'RED', label: Text('RED', style: TextStyle(fontSize: 11))),

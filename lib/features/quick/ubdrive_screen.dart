@@ -1,12 +1,8 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/theme.dart';
-import '../../services/auth_service.dart';
+import '../../services/ub_web_api.dart';
 
 class _DriveItem {
   _DriveItem({
@@ -68,42 +64,21 @@ class _UbdriveScreenState extends State<UbdriveScreen> {
     super.dispose();
   }
 
-  Future<Map<String, String>> _headers({bool jsonBody = false}) async {
-    final h = <String, String>{'Accept': 'application/json'};
-    if (jsonBody) h['Content-Type'] = 'application/json';
-    final prefs = await SharedPreferences.getInstance();
-    final cookie = prefs.getString('ubf_gate_cookie_v1') ?? '';
-    if (cookie.isNotEmpty) {
-      h['Cookie'] = cookie.split(';').first;
-    }
-    return h;
-  }
-
   Future<void> _fetchList() async {
     setState(() {
       _loading = true;
       _error = null;
     });
 
-    try {
-      final uri = Uri.parse(
-        '${AuthService.gateBaseUrl}/api/drive/list?path=${Uri.encodeQueryComponent(_pathStr)}',
-      );
-      final res = await http
-          .get(uri, headers: await _headers())
-          .timeout(const Duration(seconds: 14));
-      final json = jsonDecode(res.body);
-      if (res.statusCode >= 200 && res.statusCode < 300 && json is Map && json['success'] == true) {
-        final raw = (json['items'] as List?) ?? [];
-        _items = raw
-            .whereType<Map>()
-            .map((e) => _DriveItem.fromJson(Map<String, dynamic>.from(e)))
-            .toList();
-      } else {
-        _error = (json is Map ? json['error'] : null)?.toString() ?? 'Gagal memuat UBdrive (HTTP ${res.statusCode})';
-      }
-    } catch (_) {
-      _error = 'Tidak bisa menghubungi server UBdrive (periksa koneksi internet)';
+    final res = await UbWebApi.instance.getJson('/api/drive/list', query: {'path': _pathStr});
+    if (res.ok && res.map['success'] == true) {
+      final raw = (res.map['items'] as List?) ?? [];
+      _items = raw
+          .whereType<Map>()
+          .map((e) => _DriveItem.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    } else {
+      _error = res.error ?? 'Gagal memuat UBdrive (HTTP ${res.statusCode})';
     }
 
     if (!mounted) return;
@@ -135,21 +110,12 @@ class _UbdriveScreenState extends State<UbdriveScreen> {
 
     setState(() => _busy = true);
     try {
-      final res = await http
-          .post(
-            Uri.parse('${AuthService.gateBaseUrl}/api/drive/folder'),
-            headers: await _headers(jsonBody: true),
-            body: jsonEncode({'path': _pathStr, 'name': name}),
-          )
-          .timeout(const Duration(seconds: 12));
-      final json = jsonDecode(res.body);
-      if (res.statusCode >= 200 && res.statusCode < 300 && json is Map && json['success'] == true) {
+      final res = await UbWebApi.instance.postJson('/api/drive/folder', {'path': _pathStr, 'name': name});
+      if (res.ok && res.map['success'] == true) {
         await _fetchList();
       } else {
-        _toast((json is Map ? json['error'] : null)?.toString() ?? 'Gagal membuat folder', isErr: true);
+        _toast(res.error ?? 'Gagal membuat folder', isErr: true);
       }
-    } catch (_) {
-      _toast('Gagal menghubungi server UBdrive', isErr: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -179,20 +145,12 @@ class _UbdriveScreenState extends State<UbdriveScreen> {
 
     setState(() => _busy = true);
     try {
-      final res = await http
-          .delete(
-            Uri.parse('${AuthService.gateBaseUrl}/api/drive/item?id=${Uri.encodeQueryComponent(item.id)}'),
-            headers: await _headers(),
-          )
-          .timeout(const Duration(seconds: 12));
-      final json = jsonDecode(res.body);
-      if (res.statusCode >= 200 && res.statusCode < 300 && json is Map && json['success'] == true) {
+      final res = await UbWebApi.instance.deleteJson('/api/drive/item', query: {'id': item.id});
+      if (res.ok && res.map['success'] == true) {
         await _fetchList();
       } else {
-        _toast((json is Map ? json['error'] : null)?.toString() ?? 'Gagal menghapus item', isErr: true);
+        _toast(res.error ?? 'Gagal menghapus item', isErr: true);
       }
-    } catch (_) {
-      _toast('Gagal menghubungi server UBdrive', isErr: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -368,7 +326,7 @@ class _UbdriveScreenState extends State<UbdriveScreen> {
                                       _fetchList();
                                     } else {
                                       final url =
-                                          '${AuthService.gateBaseUrl}/api/drive/file?id=${Uri.encodeQueryComponent(item.id)}&download=1';
+                                          '${UbWebApi.instance.baseUrl}/api/drive/file?id=${Uri.encodeQueryComponent(item.id)}&download=1';
                                       Clipboard.setData(ClipboardData(text: url));
                                       _toast('Link unduhan "${item.name}" disalin ke clipboard');
                                     }
@@ -424,7 +382,7 @@ class _UbdriveScreenState extends State<UbdriveScreen> {
                                           IconButton(
                                             onPressed: () {
                                               final url =
-                                                  '${AuthService.gateBaseUrl}/api/drive/file?id=${Uri.encodeQueryComponent(item.id)}&download=1';
+                                                  '${UbWebApi.instance.baseUrl}/api/drive/file?id=${Uri.encodeQueryComponent(item.id)}&download=1';
                                               Clipboard.setData(ClipboardData(text: url));
                                               _toast('Link unduhan disalin');
                                             },

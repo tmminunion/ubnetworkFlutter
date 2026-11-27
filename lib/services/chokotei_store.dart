@@ -89,7 +89,30 @@ class ChokoteiStore {
     );
   }
 
+  /// 1:1 sync with Next.js `GET /api/chokotei-manual?month=YYYY-MM` (MongoDB Atlas)
+  /// with offline-first local cache fallback.
+  Future<({List<ChokoteiIssue> items, bool fromServer})> fetchManual(String ym) async {
+    final res = await UbWebApi.instance.getJson('/api/chokotei-manual', query: {'month': ym});
+    if (res.ok && res.map['items'] is List) {
+      final remote = (res.map['items'] as List)
+          .whereType<Map>()
+          .map((m) => ChokoteiIssue.fromJson(Map<String, dynamic>.from(m), manual: true))
+          .toList();
+      if (res.map['configured'] == true || remote.isNotEmpty) {
+        await saveManualList(ym, remote);
+        return (items: remote, fromServer: true);
+      }
+    }
+    final local = await _loadManualLocal(ym);
+    return (items: local, fromServer: false);
+  }
+
   Future<List<ChokoteiIssue>> listManual(String ym) async {
+    final res = await fetchManual(ym);
+    return res.items;
+  }
+
+  Future<List<ChokoteiIssue>> _loadManualLocal(String ym) async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_manualKey(ym));
     if (raw == null || raw.isEmpty) return [];
@@ -107,5 +130,49 @@ class ChokoteiStore {
   Future<void> saveManualList(String ym, List<ChokoteiIssue> items) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_manualKey(ym), jsonEncode(items.map((e) => e.toJson()).toList()));
+  }
+
+  /// 1:1 Next.js mutation:
+  /// - Existing (`[pm]\d+`): `PATCH /api/chokotei-manual/[id]`
+  /// - New: `POST /api/chokotei-manual`
+  Future<ChokoteiIssue> upsertManual(String ym, ChokoteiIssue item) async {
+    final items = await _loadManualLocal(ym);
+    final idx = items.indexWhere((e) => e.id == item.id);
+    if (idx >= 0) {
+      items[idx] = item;
+    } else {
+      items.insert(0, item);
+    }
+    await saveManualList(ym, items);
+
+    final payload = item.toManualServerPayload();
+    final res = item.isManualServerId
+        ? await UbWebApi.instance.patchJson('/api/chokotei-manual/${Uri.encodeComponent(item.id.trim())}', payload)
+        : await UbWebApi.instance.postJson('/api/chokotei-manual', payload);
+
+    if (res.ok && res.map['item'] is Map) {
+      final synced = ChokoteiIssue.fromJson(Map<String, dynamic>.from(res.map['item'] as Map), manual: true);
+      final repIdx = items.indexWhere((e) => e.id == item.id || e.id == synced.id);
+      if (repIdx >= 0) {
+        items[repIdx] = synced;
+      } else {
+        items.insert(0, synced);
+      }
+      await saveManualList(ym, items);
+      return synced;
+    }
+
+    return item;
+  }
+
+  /// 1:1 Next.js `DELETE /api/chokotei-manual/[id]`
+  Future<bool> deleteManual(String ym, String id) async {
+    final items = await _loadManualLocal(ym);
+    items.removeWhere((e) => e.id == id);
+    await saveManualList(ym, items);
+
+    if (!RegExp(r'^[pm]\d{1,9}$', caseSensitive: false).hasMatch(id.trim())) return true;
+    final res = await UbWebApi.instance.deleteJson('/api/chokotei-manual/${Uri.encodeComponent(id.trim())}');
+    return res.ok;
   }
 }

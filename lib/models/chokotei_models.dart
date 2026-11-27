@@ -68,6 +68,20 @@ class ChokoteiIssue {
         isManual: isManual ?? this.isManual,
       );
 
+  bool get isManualServerId => RegExp(r'^[pm]\d{1,9}$', caseSensitive: false).hasMatch(id.trim());
+
+  Map<String, dynamic> toManualServerPayload() => {
+        'tanggal': tanggal,
+        'shift': shift.toUpperCase() == 'WHITE' ? 'WHITE' : 'RED',
+        'machine': machine.trim().isEmpty ? 'MST' : machine.trim(),
+        'problem': problem.trim(),
+        'countermeasure': countermeasure.trim(),
+        'pic': actionPic.trim(),
+        'status': (actionStatus == 'solved' || actionStatus == 'in_progress') ? actionStatus : 'open',
+        'loss': lossUnits,
+        'delay': delayMin,
+      };
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'tanggal': tanggal,

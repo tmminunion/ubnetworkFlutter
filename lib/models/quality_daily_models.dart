@@ -27,6 +27,8 @@ class QualityFinding {
   final String pic;
   final bool hasKaizen;
 
+  bool get isServerId => RegExp(r'^q\d{1,9}$').hasMatch(id.trim());
+
   int get dayNumber => int.tryParse(date.length >= 10 ? date.substring(8, 10) : '0') ?? 0;
 
   QualityFinding copyWith({
@@ -70,8 +72,20 @@ class QualityFinding {
         'hasKaizen': hasKaizen,
       };
 
+  Map<String, dynamic> toServerPayload() => {
+        'date': date,
+        'team': team,
+        'kind': kind,
+        'problem': problem,
+        'process': process,
+        'foundWhere': foundWhere,
+        'qty': qty,
+        'countermeasure': countermeasure,
+        'pic': pic,
+      };
+
   factory QualityFinding.fromJson(Map<String, dynamic> json) => QualityFinding(
-        id: (json['id'] ?? '').toString(),
+        id: (json['id'] ?? json['_id'] ?? '').toString(),
         date: (json['date'] ?? '').toString(),
         team: (json['team'] ?? 'red').toString().toLowerCase() == 'white' ? 'white' : 'red',
         kind: (json['kind'] ?? 'out').toString().toLowerCase() == 'in' ? 'in' : 'out',
@@ -81,7 +95,7 @@ class QualityFinding {
         qty: json['qty'] is num ? (json['qty'] as num).toInt() : (int.tryParse('${json['qty'] ?? 1}') ?? 1),
         countermeasure: (json['countermeasure'] ?? '').toString(),
         pic: (json['pic'] ?? '').toString(),
-        hasKaizen: json['hasKaizen'] == true,
+        hasKaizen: json['kaizen'] == true || json['hasKaizen'] == true,
       );
 }
 

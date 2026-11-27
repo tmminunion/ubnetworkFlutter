@@ -59,11 +59,6 @@ class _QualityDailyScreenState extends State<QualityDailyScreen> {
     });
   }
 
-  Future<void> _persist() async {
-    await QualityDailyStore.instance.saveRecord(_rec);
-    if (mounted) setState(() {});
-  }
-
   Future<void> _toggleZero(String team, int day) async {
     final set = _rec.zeroDaysFor(team);
     if (set.contains(day)) {
@@ -71,7 +66,8 @@ class _QualityDailyScreenState extends State<QualityDailyScreen> {
     } else {
       set.add(day);
     }
-    await _persist();
+    await QualityDailyStore.instance.saveZeroCell(_rec, team, day);
+    if (mounted) setState(() {});
   }
 
   Future<void> _editTargetDu() async {
@@ -104,7 +100,8 @@ class _QualityDailyScreenState extends State<QualityDailyScreen> {
         final v = double.tryParse(ctrl.text.trim().replaceAll(',', '.'));
         if (v != null && v > 0 && v <= 1) {
           _rec.targetDu = v;
-          await _persist();
+          await QualityDailyStore.instance.saveTargetDu(_rec);
+          if (mounted) setState(() {});
         }
       }
     } finally {
@@ -272,12 +269,12 @@ class _QualityDailyScreenState extends State<QualityDailyScreen> {
       );
 
       if (action == 'delete' && existing != null) {
-        _rec.findings.removeWhere((f) => f.id == existing.id);
-        await _persist();
+        await QualityDailyStore.instance.deleteFinding(_rec, existing.id);
+        if (mounted) setState(() {});
       } else if (action == 'save') {
         final qty = math.max(1, int.tryParse(qtyCtrl.text.trim()) ?? 1);
         final item = QualityFinding(
-          id: existing?.id ?? 'Q${widget.kind == "in" ? "I" : "O"}-${_rec.findings.length + 1}',
+          id: existing?.id ?? 'Q${widget.kind == "in" ? "I" : "O"}-${DateTime.now().millisecondsSinceEpoch}',
           date: dateCtrl.text.trim(),
           team: selTeam,
           kind: widget.kind,
@@ -289,13 +286,8 @@ class _QualityDailyScreenState extends State<QualityDailyScreen> {
           countermeasure: cmCtrl.text.trim(),
           hasKaizen: existing?.hasKaizen ?? false,
         );
-        final idx = _rec.findings.indexWhere((f) => f.id == item.id);
-        if (idx >= 0) {
-          _rec.findings[idx] = item;
-        } else {
-          _rec.findings.insert(0, item);
-        }
-        await _persist();
+        await QualityDailyStore.instance.upsertFinding(_rec, item);
+        if (mounted) setState(() {});
       }
     } finally {
       dateCtrl.dispose();
