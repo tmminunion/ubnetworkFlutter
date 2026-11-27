@@ -739,7 +739,7 @@ class HubCatalog {
         SubModuleItem(
           id: 'settings',
           title: 'Pengaturan Lini & Opsi Produksi',
-          desc: 'Konfigurasi Role akses, Line Name, Takt Time, URL API server, dan sync SharePoint.',
+          desc: 'Konfigurasi Takt Time aktif global lini, pimpinan GL/TL Shift Red & White, rasio model CBU, part CKD, dan Service Part.',
           route: '/productivity/settings',
           badge: 'NATIVE READY',
           gradient: [Color(0xFF475569), Color(0xFF1E293B)],

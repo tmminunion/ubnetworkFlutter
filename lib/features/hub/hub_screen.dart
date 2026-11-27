@@ -5,6 +5,7 @@ import '../../data/hub_catalog.dart';
 import '../../models/checksheet_models.dart';
 import '../../services/auth_service.dart';
 import '../../services/local_store.dart';
+import '../../services/ub_web_api.dart';
 import '../checksheet/checksheet_screen.dart';
 import '../env/env_daily_screen.dart';
 import '../env/env_temuan_screen.dart';
@@ -40,7 +41,6 @@ class HubScreen extends StatefulWidget {
 
 class _HubScreenState extends State<HubScreen> {
   UbSettings _cfg = UbSettings();
-  List<ChecksheetReport> _reports = const [];
   bool _loading = true;
   bool _pillarsCollapsed = false;
   bool _kaizenCollapsed = false;
@@ -53,13 +53,35 @@ class _HubScreenState extends State<HubScreen> {
 
   Future<void> _load() async {
     final cfg = await LocalStore.instance.getSettings();
-    final reps = await LocalStore.instance.listReports();
     if (!mounted) return;
     setState(() {
       _cfg = cfg;
-      _reports = reps;
       _loading = false;
     });
+
+    // Sinkronkan Line Name & Takt Time otomatis dari pengaturan server (/api/ub?action=get_settings)
+    final res = await UbWebApi.instance.getUb(const {'action': 'get_settings'});
+    if (!mounted) return;
+    if (res.ok && res.map['status'] == 'success' && res.map['data'] is Map) {
+      final d = Map<String, dynamic>.from(res.map['data'] as Map);
+      final serverLine = (d['line_name'] ?? cfg.lineName).toString().trim();
+      final serverTt = d['current_takt_time'] is num
+          ? (d['current_takt_time'] as num).toDouble()
+          : double.tryParse('${d['current_takt_time'] ?? ''}'.replaceAll(',', '.'));
+      var changed = false;
+      if (serverLine.isNotEmpty && serverLine != cfg.lineName) {
+        cfg.lineName = serverLine;
+        changed = true;
+      }
+      if (serverTt != null && serverTt > 0 && serverTt != cfg.taktTime) {
+        cfg.taktTime = serverTt;
+        changed = true;
+      }
+      if (changed) {
+        await LocalStore.instance.saveSettings(cfg);
+        if (mounted) setState(() => _cfg = cfg);
+      }
+    }
   }
 
   Future<void> _openChecksheet({String? date, String? shift}) async {
@@ -76,10 +98,7 @@ class _HubScreenState extends State<HubScreen> {
     if (config == null) return;
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => SubHubScreen(
-          config: config,
-          onOpenSettings: _openSettings,
-        ),
+        builder: (_) => SubHubScreen(config: config),
       ),
     );
     await _load();
@@ -218,219 +237,12 @@ class _HubScreenState extends State<HubScreen> {
     );
   }
 
-  void _openLocalHistorySheet() {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: UbColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.58,
-        maxChildSize: 0.88,
-        minChildSize: 0.35,
-        builder: (ctx, scrollCtrl) => Column(
-          children: [
-            const SizedBox(height: 12),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(99)),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(18, 14, 18, 10),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Riwayat Checksheet A3 Lokal', style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w900, color: Colors.white)),
-                      Text('Tersimpan offline di perangkat ini', style: TextStyle(fontSize: 11.5, color: UbColors.textMuted)),
-                    ],
-                  ),
-                  FilledButton.icon(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: UbColors.cyan,
-                      foregroundColor: UbColors.bg,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    ),
-                    onPressed: () {
-                      Navigator.pop(ctx);
-                      _openChecksheet();
-                    },
-                    icon: const Icon(Icons.add_rounded, size: 16),
-                    label: const Text('Baru', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 12)),
-                  ),
-                ],
-              ),
-            ),
-            const Divider(height: 1, color: Colors.white12),
-            Expanded(
-              child: _reports.isEmpty
-                  ? const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(24),
-                        child: Text(
-                          'Belum ada checksheet tersimpan di perangkat ini. Masuk ke Pilar Productivity → Daily Production Checksheet untuk mulai.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: 12.5, color: UbColors.textMuted),
-                        ),
-                      ),
-                    )
-                  : ListView.builder(
-                      controller: scrollCtrl,
-                      padding: const EdgeInsets.all(14),
-                      itemCount: _reports.length,
-                      itemBuilder: (_, idx) {
-                        final r = _reports[idx];
-                        final st = UbMasterData.computeStats(r);
-                        final synced = r.syncStatus == 'synced';
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          child: ListTile(
-                            onTap: () {
-                              Navigator.pop(ctx);
-                              _openChecksheet(date: r.tanggal, shift: r.shift);
-                            },
-                            leading: CircleAvatar(
-                              backgroundColor: r.shift == 'RED'
-                                  ? UbColors.rose.withValues(alpha: 0.2)
-                                  : UbColors.cyan.withValues(alpha: 0.2),
-                              child: Text(
-                                r.shift == 'RED' ? 'R' : 'W',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                  color: r.shift == 'RED' ? UbColors.rose : UbColors.cyan,
-                                ),
-                              ),
-                            ),
-                            title: Text(
-                              '${UbMasterData.formatDDMMYYYY(r.tanggal)} • ${r.shift}',
-                              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5),
-                            ),
-                            subtitle: Text(
-                              'Act ${st.totalAct}/${st.totalPlan} U · Eff ${st.internalEfficiency}% · Delay ${st.totalDelayMin}m',
-                              style: const TextStyle(fontFamily: 'monospace', fontSize: 11, color: UbColors.textMuted),
-                            ),
-                            trailing: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: (synced ? UbColors.emerald : UbColors.amber).withValues(alpha: 0.16),
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                              child: Text(
-                                synced ? 'SYNCED' : 'LOKAL',
-                                style: TextStyle(
-                                  fontSize: 9.5,
-                                  fontWeight: FontWeight.w900,
-                                  color: synced ? UbColors.emerald : UbColors.amber,
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _openSettings() async {
-    var role = _cfg.role;
-    final lineCtrl = TextEditingController(text: _cfg.lineName);
-    final taktCtrl = TextEditingController(text: '${_cfg.taktTime}');
-    final apiCtrl = TextEditingController(text: _cfg.serverApiUrl);
-    final keyCtrl = TextEditingController(text: _cfg.apiKey);
-    var spEnabled = _cfg.enableSharepointSync;
-
-    try {
-      final saved = await showModalBottomSheet<bool>(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: UbColors.surface,
-        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
-        builder: (ctx) => StatefulBuilder(
-          builder: (ctx, setM) => Padding(
-            padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.of(ctx).viewInsets.bottom + 16),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text('⚙️ Pengaturan Role & Server Sync', style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w900)),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    initialValue: role,
-                    decoration: const InputDecoration(labelText: 'Role Akses', border: OutlineInputBorder(), isDense: true),
-                    items: const [
-                      DropdownMenuItem(value: 'ADMIN', child: Text('ADMIN (Edit RED & WHITE)')),
-                      DropdownMenuItem(value: 'RED', child: Text('SHIFT RED')),
-                      DropdownMenuItem(value: 'WHITE', child: Text('SHIFT WHITE')),
-                      DropdownMenuItem(value: 'VIEWER', child: Text('VIEWER (Read-Only)')),
-                    ],
-                    onChanged: (v) {
-                      if (v != null) setM(() => role = v);
-                    },
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(child: TextField(controller: lineCtrl, decoration: const InputDecoration(labelText: 'Line Name', border: OutlineInputBorder(), isDense: true))),
-                      const SizedBox(width: 8),
-                      Expanded(child: TextField(controller: taktCtrl, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Takt Time (m)', border: OutlineInputBorder(), isDense: true))),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  TextField(controller: apiCtrl, decoration: const InputDecoration(labelText: 'Server API URL', border: OutlineInputBorder(), isDense: true)),
-                  const SizedBox(height: 10),
-                  TextField(controller: keyCtrl, obscureText: true, decoration: const InputDecoration(labelText: 'X-UB-API-Key (opsional)', border: OutlineInputBorder(), isDense: true)),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    value: spEnabled,
-                    title: const Text('Aktifkan Sync SharePoint (NUDB)', style: TextStyle(fontSize: 13)),
-                    onChanged: (v) => setM(() => spEnabled = v),
-                  ),
-                  FilledButton(
-                    style: FilledButton.styleFrom(backgroundColor: UbColors.cyan, foregroundColor: UbColors.bg),
-                    onPressed: () => Navigator.pop(ctx, true),
-                    child: const Text('Simpan Pengaturan', style: TextStyle(fontWeight: FontWeight.w900)),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-
-      if (saved == true) {
-        _cfg
-          ..role = role
-          ..lineName = lineCtrl.text.trim().isNotEmpty ? lineCtrl.text.trim() : 'UB ASSY'
-          ..taktTime = double.tryParse(taktCtrl.text.trim()) ?? 2.4
-          ..serverApiUrl = apiCtrl.text.trim()
-          ..apiKey = keyCtrl.text.trim()
-          ..enableSharepointSync = spEnabled;
-        await LocalStore.instance.saveSettings(_cfg);
-        await _load();
-      }
-    } finally {
-      lineCtrl.dispose();
-      taktCtrl.dispose();
-      apiCtrl.dispose();
-      keyCtrl.dispose();
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
-    final pendingCount = _reports.where((r) => r.syncStatus != 'synced').length;
+    final user = widget.authUser ?? AuthService.instance.currentUser;
+    final userShift = (user?.shift ?? '').toUpperCase();
+    final ttLabel = '${_cfg.taktTime}'.replaceAll('.', ',');
 
     final pillarCols = width >= 960 ? 3 : 2;
     final kaizenCols = width >= 1020 ? 5 : (width >= 680 ? 3 : 2);
@@ -469,10 +281,10 @@ class _HubScreenState extends State<HubScreen> {
             child: Column(
               children: [
                 // =========================================================
-                // 1. SIMPLE COMPACT HEADER BAR
+                // 1. SIMPLE COMPACT HEADER BAR (1:1 Next.js — Tanpa Task Lokal & Tanpa Pengaturan API)
                 // =========================================================
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                   decoration: BoxDecoration(
                     color: UbColors.bg.withValues(alpha: 0.9),
                     border: Border(bottom: BorderSide(color: Colors.white.withValues(alpha: 0.08))),
@@ -504,7 +316,7 @@ class _HubScreenState extends State<HubScreen> {
                             const SizedBox(width: 6),
                             Flexible(
                               child: Text(
-                                '· ${_cfg.lineName}',
+                                '· ${_cfg.lineName} · TT ${ttLabel}m',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: UbColors.textMuted),
@@ -513,49 +325,52 @@ class _HubScreenState extends State<HubScreen> {
                           ],
                         ),
                       ),
-                      InkWell(
-                        onTap: _openLocalHistorySheet,
-                        borderRadius: BorderRadius.circular(9),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                      if (user != null) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                           decoration: BoxDecoration(
                             color: Colors.white.withValues(alpha: 0.06),
                             borderRadius: BorderRadius.circular(9),
-                            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+                            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.inventory_2_rounded, size: 13, color: pendingCount > 0 ? UbColors.amber : UbColors.cyan),
-                              const SizedBox(width: 4),
-                              Text('${_reports.length}', style: const TextStyle(fontFamily: 'monospace', fontSize: 10.5, fontWeight: FontWeight.w800, color: Colors.white)),
+                              Container(
+                                width: 16,
+                                height: 16,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: userShift == 'RED'
+                                      ? UbColors.rose
+                                      : (userShift == 'WHITE' ? Colors.white : UbColors.amber),
+                                ),
+                                alignment: Alignment.center,
+                                child: Text(
+                                  userShift == 'RED' ? 'R' : (userShift == 'WHITE' ? 'W' : 'A'),
+                                  style: TextStyle(
+                                    fontSize: 8.5,
+                                    fontWeight: FontWeight.w900,
+                                    color: userShift == 'RED' ? Colors.white : UbColors.bg,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              ConstrainedBox(
+                                constraints: const BoxConstraints(maxWidth: 108),
+                                child: Text(
+                                  user.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Colors.white),
+                                ),
+                              ),
                             ],
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 5),
-                      InkWell(
-                        onTap: _openSettings,
-                        borderRadius: BorderRadius.circular(9),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: UbColors.purple.withValues(alpha: 0.16),
-                            borderRadius: BorderRadius.circular(9),
-                            border: Border.all(color: UbColors.purple.withValues(alpha: 0.4)),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(_cfg.role, style: const TextStyle(fontFamily: 'monospace', fontSize: 9.5, fontWeight: FontWeight.w900, color: Color(0xFFD8B4FE))),
-                              const SizedBox(width: 3),
-                              const Icon(Icons.settings_rounded, size: 12, color: Color(0xFFD8B4FE)),
-                            ],
-                          ),
-                        ),
-                      ),
+                      ],
                       if (widget.onLogout != null) ...[
-                        const SizedBox(width: 5),
+                        const SizedBox(width: 6),
                         InkWell(
                           onTap: widget.onLogout,
                           borderRadius: BorderRadius.circular(9),
@@ -566,7 +381,7 @@ class _HubScreenState extends State<HubScreen> {
                               borderRadius: BorderRadius.circular(9),
                               border: Border.all(color: UbColors.rose.withValues(alpha: 0.35)),
                             ),
-                            child: const Icon(Icons.logout_rounded, size: 13, color: Color(0xFFFDA4AF)),
+                            child: const Icon(Icons.logout_rounded, size: 14, color: Color(0xFFFDA4AF)),
                           ),
                         ),
                       ],

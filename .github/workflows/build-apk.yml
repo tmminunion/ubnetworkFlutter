@@ -197,10 +197,19 @@ jobs:
           PYEOF
 
       - name: Build Signed Release APK & AAB (Play Store)
+        env:
+          GRADLE_OPTS: -Dorg.gradle.internal.http.retry.maxRetries=5 -Dorg.gradle.internal.http.retry.initialBackoff=3000
         run: |
-          flutter build apk --release \
-            --build-name="${{ steps.meta.outputs.version_name }}" \
-            --build-number="${{ steps.meta.outputs.version_code }}"
+          for attempt in 1 2 3; do
+            if flutter build apk --release \
+              --build-name="${{ steps.meta.outputs.version_name }}" \
+              --build-number="${{ steps.meta.outputs.version_code }}"; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then exit 1; fi
+            echo "Retrying APK build after transient network/Maven error (attempt $attempt)..."
+            sleep 10
+          done
           cp build/app/outputs/flutter-apk/app-release.apk "UBnetwork-v${{ steps.meta.outputs.version_name }}-code${{ steps.meta.outputs.version_code }}-release.apk"
 
           flutter build appbundle --release \

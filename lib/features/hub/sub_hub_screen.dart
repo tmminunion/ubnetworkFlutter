@@ -21,6 +21,7 @@ import '../productivity/attendance_screen.dart';
 import '../productivity/prod_monitoring_screen.dart';
 import '../productivity/after_prod_screen.dart';
 import '../productivity/prod_kaizen_screen.dart';
+import '../productivity/productivity_settings_screen.dart';
 import '../productivity/roster_screen.dart';
 import '../productivity/shift_template_screen.dart';
 import '../productivity/task_hub_screen.dart';
@@ -38,11 +39,9 @@ class SubHubScreen extends StatelessWidget {
   const SubHubScreen({
     super.key,
     required this.config,
-    this.onOpenSettings,
   });
 
   final SubHubConfig config;
-  final VoidCallback? onOpenSettings;
 
   void _handleModuleTap(BuildContext context, SubModuleItem mod) {
     if (mod.route == '/productivity/checksheet' || mod.route == '/productivity/print') {
@@ -255,8 +254,10 @@ class SubHubScreen extends StatelessWidget {
       return;
     }
 
-    if (mod.route == '/productivity/settings' && onOpenSettings != null) {
-      onOpenSettings!();
+    if (mod.route == '/productivity/settings') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const ProductivitySettingsScreen()),
+      );
       return;
     }
 
